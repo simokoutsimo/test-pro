@@ -1,5 +1,3 @@
-
-export default App;
 import React, { useState } from 'react';
 import InputForm from './components/InputForm';
 import ReportView from './components/ReportView';
@@ -8,37 +6,25 @@ import PricingPage from './components/PricingPage';
 import TestSelectionPage from './components/TestSelectionPage';
 import MartTest from './components/MartTest';
 import VbtTest from './components/VbtTest';
+import JumpTest from './components/JumpTest';
 import { TestResult, Language, User, InputCacheData, TestType } from './types';
 import { translations } from './utils/translations';
 import { LogOut, ArrowLeft } from 'lucide-react';
 
 const App: React.FC = () => {
-  // 1. Auth & User State
   const [user, setUser] = useState<User | null>(null);
-  
-  // 2. View State within the App
   const [appView, setAppView] = useState<'selection' | 'input' | 'report'>('selection');
-  
-  // 3. Selected Test Type
   const [selectedTest, setSelectedTest] = useState<TestType | null>(null);
-
-  // 4. Data State
   const [resultData, setResultData] = useState<TestResult | null>(null);
   const [inputCache, setInputCache] = useState<InputCacheData | undefined>(undefined);
-  
-  // 5. Global Settings
   const [lang, setLang] = useState<Language>('fi');
-  
-  // 6. Locking Logic
   const [isReportUnlocked, setIsReportUnlocked] = useState(false);
-  
   const t = translations[lang];
 
-  // HANDLERS
-
   const handleLogin = (loggedInUser: User) => {
-      setUser({ ...loggedInUser, credits: 0 });
-      setAppView('selection'); // Go to test selection after login
+      // DEMO MODE: Grant Pro plan and infinite credits on login
+      setUser({ ...loggedInUser, plan: 'pro', credits: Infinity });
+      setAppView('selection');
   };
 
   const handleLogout = () => {
@@ -51,14 +37,17 @@ const App: React.FC = () => {
 
   const handleTestSelect = (type: TestType) => {
       setSelectedTest(type);
-      setAppView('input');
+      if (type !== 'jump') {
+        setAppView('input');
+      } else {
+        // For JumpTest, we go directly to the test view which is handled by the router
+      }
   };
 
   const handlePurchase = (plan: 'single' | 'pro' | 'coach') => {
       if (user) {
           const credits = plan === 'single' ? 1 : Infinity;
           setUser({ ...user, plan, credits });
-          // Remain on input view (or go there if not already)
           setAppView('input');
       }
   };
@@ -66,20 +55,17 @@ const App: React.FC = () => {
   const handleCalculate = (result: TestResult, inputData: InputCacheData) => {
     setResultData(result);
     setInputCache(inputData);
-    
     if (user?.credits === Infinity) {
         setIsReportUnlocked(true);
     } else {
         setIsReportUnlocked(false);
     }
-    
     setAppView('report');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleUnlockReport = () => {
       if (!user) return;
-      
       if (user.credits > 0) {
           if (user.credits !== Infinity) {
              setUser({ ...user, credits: user.credits - 1 });
@@ -99,8 +85,7 @@ const App: React.FC = () => {
   const handleBack = () => {
       if (appView === 'report') {
           setAppView('input');
-      } else if (appView === 'input') {
-          // Back to selection
+      } else if (appView === 'input' || selectedTest === 'jump' || selectedTest === 'vbt') {
           setSelectedTest(null);
           setAppView('selection');
       }
@@ -110,30 +95,28 @@ const App: React.FC = () => {
     setLang(prev => prev === 'fi' ? 'en' : 'fi');
   };
 
-  // ROUTING LOGIC
+  // --- ROUTING LOGIC ---
 
-  // 1. Not Logged In -> Auth Page
   if (!user) {
       return <AuthPage onLogin={handleLogin} lang={lang} onToggleLang={toggleLang} />;
   }
 
-  // 2. Logged In -> Selection Page (if no test selected)
   if (!selectedTest || appView === 'selection') {
       return <TestSelectionPage onSelect={handleTestSelect} onLogout={handleLogout} lang={lang} />;
   }
 
-  // 3. Test Selected -> Check Plan
-  // Note: MART test is simple and doesn't necessarily need premium credits logic for now, 
-  // but let's keep it consistent. If user has no plan, go to pricing.
-  if (!user.plan) {
-      return <PricingPage onPurchase={handlePurchase} onBack={handleBack} lang={lang} />;
-  }
+  // DEMO MODE: Bypassing the pricing page logic
+  // The original check `!user.plan` is removed.
 
-  // 4. Test Selected & Plan OK -> Input/Report
   if (selectedTest === 'vbt') {
       return <VbtTest lang={lang} onBack={handleBack} />;
   }
+  
+  if (selectedTest === 'jump') {
+      return <JumpTest />;
+  }
 
+  // Default view for other tests
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-slate-900 bg-slate-50">
       <div className="flex justify-between max-w-4xl mx-auto mb-4">

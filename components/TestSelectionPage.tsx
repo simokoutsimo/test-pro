@@ -74,6 +74,14 @@ const TestSelectionPage: React.FC<TestSelectionPageProps> = ({ onSelect, onLogou
                     icon={Camera}
                     color="text-cyan-500"
                 />
+                 <TestCard 
+                    type="jump"
+                    title={t.testJump}
+                    desc={t.testJumpDesc}
+                    icon={TrendingUp}
+                    color="text-emerald-500"
+                    comingSoon={false}
+                />
                 <TestCard 
                     type="growth"
                     title={t.testGrowth}
@@ -88,14 +96,6 @@ const TestSelectionPage: React.FC<TestSelectionPageProps> = ({ onSelect, onLogou
                     desc={t.testSpeedDesc}
                     icon={Timer}
                     color="text-blue-500"
-                    comingSoon={true}
-                />
-                <TestCard 
-                    type="jump"
-                    title={t.testJump}
-                    desc={t.testJumpDesc}
-                    icon={TrendingUp}
-                    color="text-emerald-500"
                     comingSoon={true}
                 />
                 <TestCard 
