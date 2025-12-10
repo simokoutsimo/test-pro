@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowLeft, Camera, Settings2, Play, Activity } from 'lucide-react';
+import { ArrowLeft, Camera, Settings2, Play } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
 
@@ -113,8 +113,6 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack }) => {
           // This ensures the logic works regardless of screen size scaling
           // We assume the visual overlay box is centered on screen.
           // For simplicity in this engine, we take a center crop of the video feed matching CONFIG size ratio
-          const scaleX = canvasRef.current.width / window.innerWidth;
-          const scaleY = canvasRef.current.height / window.innerHeight;
           // Use the larger scale to ensure coverage or just fix it to a pixel area
           // Let's define ROI as center 30% of the screen for robust detection in box mode
           const boxSize = Math.min(canvasRef.current.width, canvasRef.current.height) * 0.4;

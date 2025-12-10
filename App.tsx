@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import InputForm from './components/InputForm';
 import ReportView from './components/ReportView';
 import AuthPage from './components/AuthPage';
-import PricingPage from './components/PricingPage';
 import TestSelectionPage from './components/TestSelectionPage';
 import MartTest from './components/MartTest';
 import VbtTest from './components/VbtTest';
@@ -41,14 +40,6 @@ const App: React.FC = () => {
         setAppView('input');
       } else {
         // For JumpTest, we go directly to the test view which is handled by the router
-      }
-  };
-
-  const handlePurchase = (plan: 'single' | 'pro' | 'coach') => {
-      if (user) {
-          const credits = plan === 'single' ? 1 : Infinity;
-          setUser({ ...user, plan, credits });
-          setAppView('input');
       }
   };
 

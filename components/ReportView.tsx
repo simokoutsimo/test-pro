@@ -3,8 +3,8 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea
 } from 'recharts';
-import { ArrowLeft, Printer, Activity, Heart, Zap, Share2, Globe, Settings2, TrendingUp, TrendingDown, Minus, Dumbbell, Target, Quote, Calendar, Pencil, Check, Mountain, Gauge, Flame, Clock, Lock } from 'lucide-react';
-import { TestResult, Language, InputRow, ThresholdMethod, PreviousResultData, InputCacheData } from '../types';
+import { ArrowLeft, Printer, Activity, Heart, Zap, Share2, Globe, Settings2, TrendingUp, TrendingDown, Minus, Target, Calendar, Pencil, Check, Mountain, Gauge, Flame, Lock } from 'lucide-react';
+import { TestResult, Language, ThresholdMethod, InputCacheData } from '../types';
 import { calculateTestResults, formatPace } from '../utils/calculations';
 import { translations } from '../utils/translations';
 
@@ -214,7 +214,7 @@ const ReportView: React.FC<ReportViewProps> = ({
 
   const renderThresholdLabel = (props: any, text: string, pace: number, hr: number, color: string) => {
     const { x, viewBox } = props;
-    if (typeof x !== 'number' || !viewBox) return null;
+    if (typeof x !== 'number' || !viewBox) return <g />;
 
     const boxWidth = 54;
     const boxHeight = 42;

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Check, Zap, Users, Crown, ArrowLeft, LogOut } from 'lucide-react';
+import { Check, Zap, Users, Crown, LogOut } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
 

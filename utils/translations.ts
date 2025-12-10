@@ -1,6 +1,4 @@
 
-import { Language } from '../types';
-
 export const translations = {
   fi: {
     appSubtitle: "Ammattimainen kynnysanalyysi",
