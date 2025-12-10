@@ -13,6 +13,11 @@ export default {
         fontFamily: {
           sans: ['Inter', 'sans-serif'],
         },
+        colors: {
+          slate: {
+            850: '#1e293b',
+          },
+        },
         animation: {
           'fade-in': 'fadeIn 0.5s ease-out',
         },
