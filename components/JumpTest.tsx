@@ -1,7 +1,9 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { Target, Play, Square } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
+import { trackByColor, calibrateColorFromClick, ColorRange, COLOR_PRESETS, ROI } from '../utils/tracking';
 
 interface JumpTestProps {
     lang?: Language;
@@ -28,6 +30,13 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
 
+    const [phase, setPhase] = useState<'menu' | 'calibrate' | 'tracking'>('menu');
+    const [mode, setMode] = useState<'cmj' | 'rsi'>('cmj');
+    const [isSystemActive, setSystemActive] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [colorRange, setColorRange] = useState<ColorRange>(COLOR_PRESETS.green);
+    const [trackingConfidence, setTrackingConfidence] = useState(0);
+
     const [uiState, setUiState] = useState({
         height: "0.0",
         flight: "0",
@@ -36,10 +45,6 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
         fps: "0",
         jumps: 0
     });
-    const [mode, setMode] = useState<'cmj' | 'rsi'>('cmj');
-    const [isSystemActive, setSystemActive] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
-    const [recentJumps, setRecentJumps] = useState<JumpData[]>([]);
 
     const logicState = useRef({
         tapeY: 0,
@@ -53,37 +58,37 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
         jumpCount: 0,
         lastLandingTime: 0,
         allJumps: [] as JumpData[],
-        positionHistory: [] as number[],
         framesPhys: 0,
         lastFpsCheck: 0,
         animationFrameId: 0,
         autoStopTimeout: null as any,
         sessionStartTime: 0,
+        baselineFrames: 0,
+        baselineSum: 0
     }).current;
 
     const TEST_CONFIG = {
         cmj: {
-            tapeBrightness: 220,
             threshold: 0.020,
             minFlightTime: 150,
             maxFlightTime: 1500,
             autoStopDelay: 5000,
-            smoothingFrames: 5
+            baselineFrames: 30
         },
         rsi: {
-            tapeBrightness: 220,
             threshold: 0.015,
             minFlightTime: 100,
             maxFlightTime: 1000,
             autoStopDelay: 5000,
             minContactTime: 80,
             maxContactTime: 2000,
-            smoothingFrames: 5
+            baselineFrames: 30
         }
     };
     const g = 9.81;
 
-    const startSystem = useCallback(async () => {
+    const startSystem = useCallback(async (selectedMode: 'cmj' | 'rsi') => {
+        setMode(selectedMode);
         setIsLoading(true);
 
         try {
@@ -104,7 +109,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
                     }
                     logicState.sessionStartTime = Date.now();
                     setIsLoading(false);
-                    setSystemActive(true);
+                    setPhase('calibrate');
                 };
             }
         } catch (err: any) {
@@ -112,6 +117,33 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
             setIsLoading(false);
         }
     }, [logicState, t]);
+
+    const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+        if (phase !== 'calibrate' || !canvasRef.current) return;
+
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+
+        const calibratedColor = calibrateColorFromClick(ctx, x, y, 15);
+        setColorRange(calibratedColor);
+
+        startTracking();
+    };
+
+    const startTracking = () => {
+        setPhase('tracking');
+        setSystemActive(true);
+        logicState.phase = 'BASELINE';
+        logicState.baselineFrames = 0;
+        logicState.baselineSum = 0;
+    };
 
     useEffect(() => {
         window.scrollTo(0, 1);
@@ -121,95 +153,102 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
     useEffect(() => {
         if (!isSystemActive) return;
 
-        const ctx = canvasRef.current!.getContext('2d')!;
+        const ctx = canvasRef.current!.getContext('2d', { willReadFrequently: true })!;
         logicState.lastFpsCheck = performance.now();
 
-        setTimeout(() => {
-            logicState.baseLineY = logicState.tapeY;
-        }, 2000);
+        const frameLoop = () => {
+            if (!isSystemActive) return;
 
-        const loop = () => {
-            const now = performance.now();
-            logicState.framesPhys++;
-
+            ctx.save();
             ctx.drawImage(videoRef.current!, 0, 0, canvasRef.current!.width, canvasRef.current!.height);
 
-            const roi = { x: ctx.canvas.width*0.35, y: 0, w: ctx.canvas.width*0.3, h: ctx.canvas.height };
-            const tapeY = findTape(ctx, roi);
-            if (tapeY !== null) {
-                logicState.positionHistory.push(tapeY);
-                if (logicState.positionHistory.length > TEST_CONFIG[mode].smoothingFrames) {
-                    logicState.positionHistory.shift();
-                }
+            const roi: ROI = {
+                x: 0,
+                y: 0,
+                w: canvasRef.current!.width,
+                h: canvasRef.current!.height
+            };
 
-                const smoothedY = logicState.positionHistory.reduce((a, b) => a + b, 0) / logicState.positionHistory.length;
-                logicState.tapeY = smoothedY;
-                updatePhysics(smoothedY, now / 1000);
+            const trackPoint = trackByColor(ctx, roi, colorRange, 50);
 
-                ctx.fillStyle = '#0f0';
-                ctx.shadowColor = '#0f0';
-                ctx.shadowBlur = 15;
+            if (trackPoint && trackPoint.confidence > 0.3) {
+                setTrackingConfidence(trackPoint.confidence);
+
+                const x = trackPoint.x * canvasRef.current!.width;
+                const y = trackPoint.y * canvasRef.current!.height;
+
+                const size = 12 + (trackPoint.confidence * 8);
+                ctx.strokeStyle = trackPoint.confidence > 0.7 ? '#10b981' : '#ef4444';
+                ctx.lineWidth = 3;
                 ctx.beginPath();
-                ctx.arc(ctx.canvas.width/2, smoothedY * ctx.canvas.height, 12, 0, 2 * Math.PI);
-                ctx.fill();
-                ctx.shadowBlur = 0;
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x - 20, y);
+                ctx.lineTo(x + 20, y);
+                ctx.moveTo(x, y - 20);
+                ctx.lineTo(x, y + 20);
+                ctx.stroke();
+
+                if (logicState.phase === 'BASELINE') {
+                    logicState.baselineSum += trackPoint.y;
+                    logicState.baselineFrames++;
+
+                    if (logicState.baselineFrames >= TEST_CONFIG[mode].baselineFrames) {
+                        logicState.baseLineY = logicState.baselineSum / logicState.baselineFrames;
+                        logicState.phase = 'GROUND';
+
+                        ctx.strokeStyle = '#10b981';
+                        ctx.lineWidth = 2;
+                        const baseY = logicState.baseLineY * canvasRef.current!.height;
+                        ctx.beginPath();
+                        ctx.moveTo(0, baseY);
+                        ctx.lineTo(canvasRef.current!.width, baseY);
+                        ctx.stroke();
+                    }
+                } else {
+                    const now = performance.now() / 1000;
+                    updatePhysics(trackPoint.y, now);
+
+                    if (logicState.baseLineY > 0) {
+                        ctx.strokeStyle = 'rgba(34, 211, 238, 0.5)';
+                        ctx.lineWidth = 2;
+                        const baseY = logicState.baseLineY * canvasRef.current!.height;
+                        ctx.beginPath();
+                        ctx.moveTo(0, baseY);
+                        ctx.lineTo(canvasRef.current!.width, baseY);
+                        ctx.stroke();
+                    }
+                }
+            } else {
+                setTrackingConfidence(0);
             }
 
-            logicState.animationFrameId = requestAnimationFrame(loop);
+            ctx.restore();
+
+            logicState.framesPhys++;
+            const now = performance.now();
+            if (now - logicState.lastFpsCheck >= 1000) {
+                const fps = Math.round(logicState.framesPhys / ((now - logicState.lastFpsCheck) / 1000));
+                setUiState(prev => ({ ...prev, fps: String(fps) }));
+                logicState.framesPhys = 0;
+                logicState.lastFpsCheck = now;
+            }
+
+            logicState.animationFrameId = requestAnimationFrame(frameLoop);
         };
 
-        const uiInterval = setInterval(() => {
-            const now = performance.now();
-            const elapsed = now - logicState.lastFpsCheck;
-            const fps = (logicState.framesPhys / (elapsed / 1000)).toFixed(0);
-
-            const rsi = logicState.contactTime > 0 ? logicState.flightTime / logicState.contactTime : 0;
-
-            setUiState({
-                height: logicState.jumpHeight.toFixed(1),
-                flight: logicState.flightTime.toFixed(0),
-                contact: logicState.contactTime.toFixed(0),
-                rsi: rsi.toFixed(2),
-                fps: fps,
-                jumps: logicState.jumpCount
-            });
-
-            setRecentJumps([...logicState.allJumps].slice(-3).reverse());
-
-            logicState.lastFpsCheck = now;
-            logicState.framesPhys = 0;
-        }, 300);
-
-        loop();
+        logicState.animationFrameId = requestAnimationFrame(frameLoop);
 
         return () => {
-            cancelAnimationFrame(logicState.animationFrameId);
-            clearInterval(uiInterval);
-            if (logicState.autoStopTimeout) {
-                clearTimeout(logicState.autoStopTimeout);
-            }
-            if(videoRef.current?.srcObject) {
-                (videoRef.current.srcObject as MediaStream).getTracks().forEach(track => track.stop());
+            if (logicState.animationFrameId) {
+                cancelAnimationFrame(logicState.animationFrameId);
             }
         };
-
-    }, [isSystemActive, logicState, t, mode]);
-
-    const findTape = (ctx: CanvasRenderingContext2D, roi: any) => {
-        const config = TEST_CONFIG[mode as 'cmj' | 'rsi'];
-        const imgData = ctx.getImageData(roi.x, roi.y, roi.w, roi.h);
-        const data = imgData.data;
-        let bestY = -1, bestG = 0;
-
-        for (let i = 0; i < data.length; i += 8) {
-            const r = data[i], gVal = data[i+1], b = data[i+2];
-            if (gVal > config.tapeBrightness && gVal > r + 20 && gVal > b + 20 && gVal > bestG) {
-                bestG = gVal;
-                bestY = Math.floor((i / 4) / roi.w);
-            }
-        }
-        return bestY !== -1 ? (roi.y + bestY) / ctx.canvas.height : null;
-    };
+    }, [isSystemActive, colorRange, mode]);
 
     const updatePhysics = (y: number, t: number) => {
         const config = TEST_CONFIG[mode];
@@ -258,6 +297,15 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
                     logicState.jumpCount++;
                     logicState.lastLandingTime = t;
 
+                    setUiState({
+                        height: jumpHeight.toFixed(1),
+                        flight: flightTimeMs.toFixed(0),
+                        contact: logicState.contactTime.toFixed(0),
+                        rsi: rsi ? rsi.toFixed(2) : "0.00",
+                        fps: uiState.fps,
+                        jumps: logicState.jumpCount
+                    });
+
                     if (logicState.autoStopTimeout) {
                         clearTimeout(logicState.autoStopTimeout);
                     }
@@ -286,122 +334,153 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
             onShowReport(sessionData);
         }
     };
-    
+
     return (
         <div style={styles.container}>
             <video ref={videoRef} style={styles.video} autoPlay playsInline muted />
-            <canvas ref={canvasRef} style={styles.canvas} />
+            <canvas
+                ref={canvasRef}
+                style={styles.canvas}
+                onClick={handleCanvasClick}
+            />
 
-            {!isSystemActive && (
+            {phase === 'menu' && !isLoading && (
                 <div style={styles.overlay}>
-                    {!isLoading ? (
-                        <div style={styles.menuContainer}>
-                            <div style={styles.menuTitle}>Valitse testi / Select test</div>
-                            <div style={styles.switchContainer}>
-                                <button
-                                    style={mode === 'cmj' ? {...styles.btnToggleLarge, ...styles.btnActive} : styles.btnToggleLarge}
-                                    onClick={() => setMode('cmj')}
-                                >
-                                    {t.jumpCMJ}
-                                </button>
-                                <button
-                                    style={mode === 'rsi' ? {...styles.btnToggleLarge, ...styles.btnActive} : styles.btnToggleLarge}
-                                    onClick={() => setMode('rsi')}
-                                >
-                                    {t.jumpRSI}
-                                </button>
-                            </div>
-                            <button onClick={startSystem} style={styles.startBtn}>{t.jumpStart}</button>
-                        </div>
-                    ) : (
-                        <div style={styles.loader}>{t.jumpLoading}</div>
-                    )}
+                    <div style={styles.menuContainer}>
+                        <Target size={64} style={{ margin: '0 auto 20px', color: '#22d3ee' }} />
+                        <div style={styles.menuTitle}>Select Test</div>
+                        <button
+                            style={styles.button}
+                            onClick={() => startSystem('cmj')}
+                        >
+                            <Play fill="currentColor" size={20} style={{ marginRight: '8px' }} />
+                            CMJ - Counter Movement Jump
+                        </button>
+                        <button
+                            style={styles.button}
+                            onClick={() => startSystem('rsi')}
+                        >
+                            <Play fill="currentColor" size={20} style={{ marginRight: '8px' }} />
+                            RSI - Reactive Strength Index
+                        </button>
+                    </div>
                 </div>
             )}
 
-            {isSystemActive && (
-                <div style={styles.ui}>
-                    <div style={styles.header}>
-                        <div style={styles.modeBadge}>{mode === 'cmj' ? t.jumpCMJ : t.jumpRSI}</div>
-                        <div style={styles.jumpCounter}>{t.jumpJumps}: {uiState.jumps}</div>
+            {isLoading && (
+                <div style={styles.overlay}>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>{t.jumpLoading}</div>
+                </div>
+            )}
+
+            {phase === 'calibrate' && (
+                <div style={styles.uiOverlay}>
+                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ ...styles.infoPanel, textAlign: 'center' }}>
+                            <Target size={32} style={{ margin: '0 auto 12px', color: '#22d3ee' }} />
+                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#22d3ee', marginBottom: '8px' }}>
+                                Tap bright marker on bar
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                Use green, yellow, or white tape
+                            </div>
+                        </div>
                     </div>
 
-                    <div style={styles.mainMetrics}>
-                        <div style={styles.metricCard}>
-                            <div style={styles.metricLabel}>{t.jumpHeight}</div>
-                            <div style={styles.metricValue}>{uiState.height} <span style={styles.unit}>cm</span></div>
+                    <div style={{ padding: '16px', display: 'flex', gap: '8px', justifyContent: 'center', background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
+                        {Object.entries(COLOR_PRESETS).map(([name, preset]) => (
+                            <button
+                                key={name}
+                                onClick={() => {
+                                    setColorRange(preset);
+                                    startTracking();
+                                }}
+                                style={{ ...styles.presetBtn }}
+                            >
+                                {name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {phase === 'tracking' && isSystemActive && (
+                <div style={styles.uiOverlay}>
+                    <div style={styles.headerBar}>
+                        <div style={styles.modeTag}>
+                            {mode === 'cmj' ? 'CMJ' : 'RSI'}
                         </div>
-                        <div style={styles.metricCard}>
-                            <div style={styles.metricLabel}>{t.jumpFlightTime}</div>
-                            <div style={styles.metricValue}>{uiState.flight} <span style={styles.unit}>ms</span></div>
+                        <div style={{ ...styles.statPill, border: trackingConfidence > 0.7 ? '1px solid #10b981' : '1px solid #ef4444' }}>
+                            <span style={{ fontSize: '10px', color: '#94a3b8' }}>Track: </span>
+                            <span style={{ fontSize: '12px', fontWeight: 'bold', color: trackingConfidence > 0.7 ? '#10b981' : '#ef4444' }}>
+                                {(trackingConfidence * 100).toFixed(0)}%
+                            </span>
                         </div>
-                        {mode === 'rsi' && (
-                            <>
-                                <div style={styles.metricCard}>
-                                    <div style={styles.metricLabel}>{t.jumpContactTime}</div>
-                                    <div style={styles.metricValue}>{uiState.contact} <span style={styles.unit}>ms</span></div>
-                                </div>
-                                <div style={styles.metricCard}>
-                                    <div style={styles.metricLabel}>RSI</div>
-                                    <div style={styles.metricValue}>{uiState.rsi}</div>
-                                </div>
-                            </>
-                        )}
                     </div>
 
-                    {recentJumps.length > 0 && (
-                        <div style={styles.recentJumps}>
-                            <div style={styles.recentTitle}>Recent Jumps</div>
-                            {recentJumps.map((jump, idx) => (
-                                <div key={idx} style={styles.recentJumpCard}>
-                                    <span style={styles.recentJumpHeight}>{jump.height.toFixed(1)} cm</span>
-                                    <span style={styles.recentJumpTime}>{jump.flightTime.toFixed(0)} ms</span>
-                                    {mode === 'rsi' && jump.rsi && (
-                                        <span style={styles.recentJumpRsi}>RSI: {jump.rsi.toFixed(2)}</span>
-                                    )}
+                    <div style={{ flex: 1 }} />
+
+                    <div style={styles.bottomPanel}>
+                        <div style={styles.statsRow}>
+                            <div style={styles.statBox}>
+                                <div style={styles.statLabel}>{t.jumpHeight}</div>
+                                <div style={styles.statValue}>{uiState.height}</div>
+                                <div style={styles.statUnit}>cm</div>
+                            </div>
+                            <div style={styles.statBox}>
+                                <div style={styles.statLabel}>{t.jumpFlightTime}</div>
+                                <div style={styles.statValue}>{uiState.flight}</div>
+                                <div style={styles.statUnit}>ms</div>
+                            </div>
+                            {mode === 'rsi' && (
+                                <div style={styles.statBox}>
+                                    <div style={styles.statLabel}>RSI</div>
+                                    <div style={styles.statValue}>{uiState.rsi}</div>
                                 </div>
-                            ))}
+                            )}
                         </div>
-                    )}
 
-                    <button onClick={stopSystem} style={styles.stopBtn}>{t.jumpStop}</button>
-
-                    <div style={styles.fps}>FPS: {uiState.fps}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px' }}>
+                            <div style={styles.statPill}>
+                                <span style={{ fontSize: '10px', color: '#94a3b8' }}>Jumps: </span>
+                                <span style={{ fontSize: '18px', fontWeight: 'black', color: '#22d3ee' }}>{uiState.jumps}</span>
+                            </div>
+                            <button
+                                style={styles.stopBtn}
+                                onClick={stopSystem}
+                            >
+                                <Square size={16} style={{ marginRight: '6px' }} />
+                                Stop
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
     );
-}
+};
 
 const styles = {
     container: { position: 'fixed' as const, top: 0, left: 0, width: '100vw', height: '100dvh', minHeight: '100dvh', background: '#000', fontFamily: 'system-ui, sans-serif', color: 'white', overflow: 'hidden', zIndex: 1000, touchAction: 'none' } as React.CSSProperties,
     video: { position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, transform: 'scaleX(-1)' } as React.CSSProperties,
     canvas: { position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: 2, transform: 'scaleX(-1)' } as React.CSSProperties,
-    ui: { position: 'absolute', width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none', display: 'flex', flexDirection: 'column', padding: '20px' } as React.CSSProperties,
-    overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(10px)' } as React.CSSProperties,
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', pointerEvents: 'auto' } as React.CSSProperties,
-    modeBadge: { background: 'rgba(0,122,255,0.9)', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 'bold', boxShadow: '0 4px 15px rgba(0,122,255,0.3)' } as React.CSSProperties,
-    jumpCounter: { background: 'rgba(0,0,0,0.6)', padding: '8px 16px', borderRadius: '20px', fontSize: '18px', fontWeight: 'bold', backdropFilter: 'blur(10px)' } as React.CSSProperties,
-    mainMetrics: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px', pointerEvents: 'none' } as React.CSSProperties,
-    metricCard: { background: 'rgba(0,0,0,0.7)', borderRadius: '16px', padding: '16px', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' } as React.CSSProperties,
-    metricLabel: { fontSize: '11px', color: '#aaa', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' } as React.CSSProperties,
-    metricValue: { fontSize: '32px', fontWeight: 'bold', color: '#0f0', fontFamily: 'monospace' } as React.CSSProperties,
-    unit: { fontSize: '14px', color: '#888', marginLeft: '4px' } as React.CSSProperties,
-    recentJumps: { background: 'rgba(0,0,0,0.6)', borderRadius: '12px', padding: '12px', backdropFilter: 'blur(10px)', marginBottom: '20px', pointerEvents: 'none' } as React.CSSProperties,
-    recentTitle: { fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 'bold' } as React.CSSProperties,
-    recentJumpCard: { background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '8px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '12px' } as React.CSSProperties,
-    recentJumpHeight: { color: '#0f0', fontWeight: 'bold' } as React.CSSProperties,
-    recentJumpTime: { color: '#fff' } as React.CSSProperties,
-    recentJumpRsi: { color: '#ffa500' } as React.CSSProperties,
-    stopBtn: { pointerEvents: 'auto', marginTop: 'auto', padding: '16px', borderRadius: '12px', border: '2px solid #f00', background: 'rgba(255,0,0,0.2)', color: '#f00', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', backdropFilter: 'blur(10px)' } as React.CSSProperties,
-    fps: { fontSize: '10px', color: '#555', marginTop: '8px', textAlign: 'center', pointerEvents: 'none' } as React.CSSProperties,
-    loader: { fontSize: '16px', color: '#fff' } as React.CSSProperties,
-    menuContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', background: 'rgba(0,0,0,0.9)', padding: '40px', borderRadius: '20px', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)' } as React.CSSProperties,
-    menuTitle: { fontSize: '20px', fontWeight: 'bold', color: '#fff', textAlign: 'center' } as React.CSSProperties,
-    switchContainer: { display: 'flex', gap: '12px', marginTop: '5px' } as React.CSSProperties,
-    btnToggleLarge: { background: '#222', color: 'white', border: '2px solid #444', padding: '16px 32px', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', pointerEvents: 'auto', minWidth: '110px' } as React.CSSProperties,
-    btnActive: { background: '#007AFF', borderColor: '#007AFF', boxShadow: '0 4px 20px rgba(0,122,255,0.4)' } as React.CSSProperties,
-    startBtn: { pointerEvents: 'auto', padding: '18px 60px', borderRadius: '30px', border: 'none', background: 'linear-gradient(135deg, #007AFF, #0051D5)', color: 'white', fontSize: '18px', fontWeight: 'bold', boxShadow: '0 8px 30px rgba(0,122,255,0.5)', zIndex: 20, cursor: 'pointer', marginTop: '20px' } as React.CSSProperties
+    uiOverlay: { position: 'absolute', width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none', display: 'flex', flexDirection: 'column', padding: '0' } as React.CSSProperties,
+    overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(10px)' } as React.CSSProperties,
+    menuContainer: { textAlign: 'center', padding: '32px', maxWidth: '400px' } as React.CSSProperties,
+    menuTitle: { fontSize: '24px', fontWeight: 'bold', marginBottom: '24px', textTransform: 'uppercase', letterSpacing: '2px' } as React.CSSProperties,
+    button: { display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', padding: '16px 24px', marginBottom: '12px', background: '#22d3ee', color: '#000', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '1px', transition: 'all 0.2s', pointerEvents: 'auto' } as React.CSSProperties,
+    headerBar: { padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(to bottom, rgba(0,0,0,0.7), transparent)', pointerEvents: 'none' } as React.CSSProperties,
+    modeTag: { padding: '6px 12px', background: 'rgba(0,0,0,0.7)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '20px', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#22d3ee' } as React.CSSProperties,
+    statPill: { padding: '6px 12px', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '20px' } as React.CSSProperties,
+    bottomPanel: { padding: '16px', background: 'linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0.6))', backdropFilter: 'blur(12px)', pointerEvents: 'auto' } as React.CSSProperties,
+    statsRow: { display: 'flex', justifyContent: 'space-around', gap: '8px', marginBottom: '12px' } as React.CSSProperties,
+    statBox: { flex: 1, textAlign: 'center', background: 'rgba(0,0,0,0.6)', borderRadius: '12px', padding: '12px 8px', border: '1px solid rgba(255,255,255,0.1)' } as React.CSSProperties,
+    statLabel: { fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px', fontWeight: '600' } as React.CSSProperties,
+    statValue: { fontSize: '28px', fontWeight: 'black', fontFamily: 'monospace', color: '#fbbf24', lineHeight: '1' } as React.CSSProperties,
+    statUnit: { fontSize: '12px', color: '#fbbf24', marginTop: '2px', fontWeight: 'bold' } as React.CSSProperties,
+    stopBtn: { padding: '12px 24px', background: 'rgba(239, 68, 68, 0.2)', border: '2px solid #ef4444', borderRadius: '12px', color: '#ef4444', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s', pointerEvents: 'auto' } as React.CSSProperties,
+    presetBtn: { padding: '8px 16px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#fff', fontSize: '12px', fontWeight: 'bold', textTransform: 'capitalize', cursor: 'pointer', pointerEvents: 'auto' } as React.CSSProperties,
+    infoPanel: { padding: '24px', background: 'rgba(0,0,0,0.8)', borderRadius: '16px', border: '1px solid rgba(34, 211, 238, 0.3)', backdropFilter: 'blur(12px)' } as React.CSSProperties
 };
 
 export default JumpTest;

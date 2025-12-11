@@ -1,8 +1,9 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowLeft, Camera, Settings2, Play } from 'lucide-react';
+import { ArrowLeft, Camera, Target, Play, Square } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
+import { trackByColor, trackBrightestPoint, calibrateColorFromClick, ColorRange, COLOR_PRESETS, ROI, TrackingPoint } from '../utils/tracking';
 
 interface VbtTestProps {
   lang: Language;
@@ -27,8 +28,7 @@ const CONFIG = {
     targetFPS: 60,
     silenceThreshold: 3.5,
     movementThreshold: 0.003,
-    tapeBrightness: 200,
-    overlaySize: 250
+    minBlobSize: 50
 };
 
 const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
@@ -36,12 +36,14 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const [isRecording, setIsRecording] = useState(false);
+  const [phase, setPhase] = useState<'setup' | 'calibrate' | 'tracking'>('setup');
   const [velocity, setVelocity] = useState(0.00);
   const [peakVelocity, setPeakVelocity] = useState(0.00);
   const [repCount, setRepCount] = useState(0);
   const [status, setStatus] = useState(t.vbtStart);
-  const [mode, setMode] = useState<'overlay' | 'auto'>('overlay');
+  const [trackingMode] = useState<'color' | 'brightness'>('color');
+  const [colorRange, setColorRange] = useState<ColorRange>(COLOR_PRESETS.yellow);
+  const [trackingConfidence, setTrackingConfidence] = useState(0);
 
   const stateRef = useRef({
       isRecording: false,
@@ -53,7 +55,8 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
       currentRepStartTime: 0,
       currentRepPeak: 0,
       inRep: false,
-      sessionStartTime: 0
+      sessionStartTime: 0,
+      lastTrackPoint: null as TrackingPoint | null
   });
 
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -75,7 +78,7 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
       osc.connect(gain);
       gain.connect(audioCtxRef.current.destination);
       osc.type = 'sine';
-      osc.frequency.value = 880; 
+      osc.frequency.value = 880;
       gain.gain.setValueAtTime(0.1, audioCtxRef.current.currentTime);
       osc.start();
       osc.stop(audioCtxRef.current.currentTime + 0.3);
@@ -87,28 +90,21 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
           const stream = await navigator.mediaDevices.getUserMedia({
               video: {
                   facingMode: 'environment',
-                  width: { ideal: 1280 },
-                  height: { ideal: 720 },
+                  width: { ideal: 1920 },
+                  height: { ideal: 1080 },
                   frameRate: { ideal: 60, max: 120 }
               },
               audio: false
           });
-          
+
           if (videoRef.current) {
               videoRef.current.srcObject = stream;
               videoRef.current.onloadedmetadata = () => {
                   if (canvasRef.current && videoRef.current) {
                       canvasRef.current.width = videoRef.current.videoWidth;
                       canvasRef.current.height = videoRef.current.videoHeight;
-                      
-                      setIsRecording(true);
-                      setStatus(t.vbtStatusReady);
-
-                      stateRef.current.isRecording = true;
-                      stateRef.current.lastMovementTime = Date.now() / 1000;
-                      stateRef.current.sessionStartTime = Date.now();
-
-                      requestAnimationFrame(processFrame);
+                      setPhase('calibrate');
+                      setStatus('Tap marker to calibrate');
                   }
               };
           }
@@ -118,87 +114,85 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
       }
   };
 
-  const processFrame = (timestamp: number) => {
-      if (!stateRef.current.isRecording || !canvasRef.current || !videoRef.current) return;
-      
-      const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (phase !== 'calibrate' || !canvasRef.current) return;
+
+      const canvas = canvasRef.current;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return;
 
-      // 1. Draw video frame
-      ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+      const calibratedColor = calibrateColorFromClick(ctx, x, y, 15);
+      setColorRange(calibratedColor);
 
-      // 2. Define ROI (Region of Interest)
-      let roi = { x: 0, y: 0, w: canvasRef.current.width, h: canvasRef.current.height };
+      startTracking();
+  };
 
-      if (mode === 'overlay') {
-          // Scale overlay box to canvas dimensions
-          // This ensures the logic works regardless of screen size scaling
-          // We assume the visual overlay box is centered on screen.
-          // For simplicity in this engine, we take a center crop of the video feed matching CONFIG size ratio
-          // Use the larger scale to ensure coverage or just fix it to a pixel area
-          // Let's define ROI as center 30% of the screen for robust detection in box mode
-          const boxSize = Math.min(canvasRef.current.width, canvasRef.current.height) * 0.4;
-          
-          roi = {
-              x: (canvasRef.current.width - boxSize) / 2,
-              y: (canvasRef.current.height - boxSize) / 2,
-              w: boxSize,
-              h: boxSize
-          };
-          
-          // Debug draw (optional, usually handled by UI overlay)
-          // ctx.strokeStyle = '#00FF00';
-          // ctx.lineWidth = 2;
-          // ctx.strokeRect(roi.x, roi.y, roi.w, roi.h);
-      }
-
-      // 3. Image Processing
-      const yPos = findBrightestCentroid(ctx, roi);
-
-      // 4. Physics Engine
-      if (yPos !== null) {
-          updatePhysics(yPos, timestamp);
-          
-          // Visual feedback dot
-          ctx.fillStyle = '#ef4444';
-          ctx.beginPath();
-          ctx.arc(roi.x + roi.w/2, yPos * canvasRef.current.height, 6, 0, Math.PI * 2);
-          ctx.fill();
-      }
-
+  const startTracking = () => {
+      setPhase('tracking');
+      setStatus(t.vbtStatusReady);
+      stateRef.current.isRecording = true;
+      stateRef.current.lastMovementTime = Date.now() / 1000;
+      stateRef.current.sessionStartTime = Date.now();
       requestAnimationFrame(processFrame);
   };
 
-  const findBrightestCentroid = (ctx: CanvasRenderingContext2D, roi: {x: number, y: number, w: number, h: number}) => {
-      const imgData = ctx.getImageData(
-          Math.floor(roi.x), 
-          Math.floor(roi.y), 
-          Math.floor(roi.w), 
-          Math.floor(roi.h)
-      );
-      const data = imgData.data;
-      const width = imgData.width;
-      
-      let totalY = 0;
-      let totalWeight = 0;
-      const stride = 4; // Optimization
-      
-      for (let i = 0; i < data.length; i += (4 * stride)) {
-          // data[i+1] is Green channel
-          if (data[i+1] > CONFIG.tapeBrightness) {
-              const pixelIndex = i / 4;
-              const y = Math.floor(pixelIndex / width);
-              totalY += y;
-              totalWeight++;
-          }
+  const processFrame = (timestamp: number) => {
+      if (!stateRef.current.isRecording || !canvasRef.current || !videoRef.current) return;
+
+      const ctx = canvasRef.current.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+
+      ctx.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+
+      const roi: ROI = {
+          x: 0,
+          y: 0,
+          w: canvasRef.current.width,
+          h: canvasRef.current.height
+      };
+
+      let trackPoint: TrackingPoint | null = null;
+
+      if (trackingMode === 'color') {
+          trackPoint = trackByColor(ctx, roi, colorRange, CONFIG.minBlobSize);
+      } else {
+          trackPoint = trackBrightestPoint(ctx, roi, 'brightness', 200);
       }
 
-      if (totalWeight > 0) {
-          let localY = totalY / totalWeight;
-          // Normalize to global 0.0 - 1.0 height
-          return (roi.y + localY) / canvasRef.current!.height;
+      if (trackPoint && trackPoint.confidence > 0.3) {
+          stateRef.current.lastTrackPoint = trackPoint;
+          setTrackingConfidence(trackPoint.confidence);
+          updatePhysics(trackPoint.y, timestamp);
+
+          const x = trackPoint.x * canvasRef.current.width;
+          const y = trackPoint.y * canvasRef.current.height;
+
+          const size = 12 + (trackPoint.confidence * 8);
+          ctx.strokeStyle = trackPoint.confidence > 0.7 ? '#10b981' : '#ef4444';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x - 20, y);
+          ctx.lineTo(x + 20, y);
+          ctx.moveTo(x, y - 20);
+          ctx.lineTo(x, y + 20);
+          ctx.stroke();
+      } else {
+          setTrackingConfidence(0);
       }
-      return null;
+
+      requestAnimationFrame(processFrame);
   };
 
   const updatePhysics = (currentY: number, timestamp: number) => {
@@ -273,7 +267,6 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
 
   const finishSet = () => {
       stateRef.current.isRecording = false;
-      setIsRecording(false);
       setStatus(t.vbtStatusDone);
       beep();
 
@@ -295,7 +288,6 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
       }
   };
 
-  // Cleanup
   useEffect(() => {
       return () => {
           stateRef.current.isRecording = false;
@@ -314,114 +306,127 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
   return (
     <div className="fixed inset-0 bg-black text-white z-50 flex flex-col font-sans" style={{ height: '100dvh', minHeight: '100dvh' }}>
 
-        {/* Fullscreen Video/Canvas Stack */}
         <div className="absolute inset-0 z-0" style={{ height: '100%' }}>
-            <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
-                muted 
-                className="w-full h-full object-cover" 
+            <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
             />
-            <canvas 
-                ref={canvasRef} 
-                className="absolute top-0 left-0 w-full h-full object-cover z-10 opacity-80" 
+            <canvas
+                ref={canvasRef}
+                onClick={handleCanvasClick}
+                className="absolute top-0 left-0 w-full h-full object-cover z-10 opacity-90"
+                style={{ cursor: phase === 'calibrate' ? 'crosshair' : 'default' }}
             />
         </div>
 
-        {/* UI Overlay */}
         <div className="relative z-20 flex flex-col h-full pointer-events-none">
-            
-            {/* Header */}
-            <div className="p-4 flex justify-between items-start pointer-events-auto">
-                <button 
+
+            <div className="p-3 flex justify-between items-center pointer-events-auto bg-gradient-to-b from-black/60 to-transparent">
+                <button
                     onClick={onBack}
-                    className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/20 text-white"
+                    className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center border border-white/20"
                 >
-                    <ArrowLeft size={20} />
+                    <ArrowLeft size={18} />
                 </button>
-                
-                <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full border border-white/10 flex items-center gap-2">
-                    <Camera size={14} className="text-cyan-400" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">VBT Analyzer</span>
+
+                <div className="bg-black/70 backdrop-blur-sm px-3 py-1.5 rounded-full border border-white/20 flex items-center gap-2">
+                    <Camera size={12} className="text-cyan-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">VBT</span>
                 </div>
 
-                <div className="relative group">
-                     <button className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-md flex items-center justify-center border border-white/20 text-white">
-                        <Settings2 size={20} />
-                     </button>
-                     {/* Mode Selector Dropdown */}
-                     <div className="absolute right-0 top-12 bg-slate-900 border border-slate-700 rounded-xl p-2 w-48 shadow-xl hidden group-hover:block pointer-events-auto">
-                        <button 
-                            onClick={() => setMode('overlay')}
-                            className={`w-full text-left px-3 py-2 text-xs font-bold rounded-lg mb-1 ${mode === 'overlay' ? 'bg-cyan-500/20 text-cyan-400' : 'text-slate-400 hover:bg-slate-800'}`}
-                        >
-                            {t.vbtModeBox}
-                        </button>
-                        <button 
-                            onClick={() => setMode('auto')}
-                            className={`w-full text-left px-3 py-2 text-xs font-bold rounded-lg ${mode === 'auto' ? 'bg-cyan-500/20 text-cyan-400' : 'text-slate-400 hover:bg-slate-800'}`}
-                        >
-                            {t.vbtModeAuto}
-                        </button>
-                     </div>
-                </div>
+                <div className="w-10 h-10"></div>
             </div>
 
-            {/* Target Box Overlay */}
-            {mode === 'overlay' && isRecording && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-2 border-cyan-400 shadow-[0_0_20px_rgba(34,211,238,0.3)] rounded-lg flex items-center justify-center">
-                    <div className="w-4 h-1 bg-cyan-400/50 absolute top-0 left-1/2 -translate-x-1/2"></div>
-                    <div className="w-4 h-1 bg-cyan-400/50 absolute bottom-0 left-1/2 -translate-x-1/2"></div>
-                    <div className="w-1 h-4 bg-cyan-400/50 absolute left-0 top-1/2 -translate-y-1/2"></div>
-                    <div className="w-1 h-4 bg-cyan-400/50 absolute right-0 top-1/2 -translate-y-1/2"></div>
+            {phase === 'setup' && (
+                <div className="flex-1 flex items-center justify-center px-6">
+                    <div className="text-center">
+                        <Target size={64} className="mx-auto mb-4 text-cyan-400" />
+                        <h2 className="text-xl font-black uppercase mb-3 tracking-tight">Setup</h2>
+                        <p className="text-slate-300 text-sm mb-6 max-w-xs mx-auto leading-relaxed">
+                            {t.vbtInstruction}
+                        </p>
+                        <button
+                            onClick={startCamera}
+                            className="bg-cyan-500 hover:bg-cyan-400 text-black px-6 py-3 rounded-full font-bold uppercase tracking-wide flex items-center gap-2 mx-auto shadow-lg pointer-events-auto transition-transform active:scale-95"
+                        >
+                            <Play fill="currentColor" size={18} />
+                            {t.vbtStart}
+                        </button>
+                    </div>
                 </div>
             )}
 
-            {/* Main Stats Display */}
-            <div className="flex-1 flex flex-col items-center justify-center pb-20">
-                 {!isRecording ? (
-                     <div className="text-center px-6">
-                         <h2 className="text-2xl font-black uppercase mb-4 tracking-tight">VBT Setup</h2>
-                         <p className="text-slate-300 text-sm mb-8 max-w-xs mx-auto leading-relaxed">
-                            {t.vbtInstruction}
-                         </p>
-                         <button
-                            onClick={startCamera}
-                            className="bg-cyan-500 hover:bg-cyan-400 text-black px-8 py-4 rounded-full font-black uppercase tracking-widest flex items-center gap-3 shadow-[0_0_30px_rgba(6,182,212,0.4)] pointer-events-auto transition-transform active:scale-95"
-                         >
-                             <Play fill="currentColor" size={20} />
-                             {t.vbtStart}
-                         </button>
-                     </div>
-                 ) : (
-                     <div className="text-center mt-auto mb-12 px-4">
-                         <div className="flex justify-between items-center mb-4 gap-4">
-                             <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full">
-                                 <span className="text-xs text-slate-400 uppercase">Reps:</span>
-                                 <span className="text-xl font-black text-cyan-400 ml-2">{repCount}</span>
-                             </div>
-                             <div className="bg-black/60 backdrop-blur-md px-4 py-2 rounded-full">
-                                 <span className="text-xs text-slate-400 uppercase">Peak:</span>
-                                 <span className="text-xl font-black text-green-400 ml-2">{peakVelocity.toFixed(2)}</span>
-                             </div>
-                         </div>
-                         <div className={`text-lg font-bold uppercase tracking-widest mb-2 transition-colors duration-300 ${status === t.vbtStatusDone ? 'text-red-500 scale-110' : status === t.vbtStatusMeasuring ? 'text-green-400' : 'text-slate-400'}`}>
-                             {status}
-                         </div>
-                         <div className="text-8xl font-black font-mono tracking-tighter tabular-nums text-yellow-400 drop-shadow-2xl">
-                             {velocity.toFixed(2)}
-                             <span className="text-lg text-yellow-500/80 font-bold ml-2">m/s</span>
-                         </div>
-                         <button
+            {phase === 'calibrate' && (
+                <div className="flex-1 flex flex-col justify-between">
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="bg-black/70 backdrop-blur-md px-6 py-4 rounded-2xl border border-cyan-400/30 text-center">
+                            <Target size={32} className="mx-auto mb-2 text-cyan-400 animate-pulse" />
+                            <p className="text-sm font-bold text-cyan-400">Tap bright marker/tape</p>
+                            <p className="text-xs text-slate-400 mt-1">Yellow, white, or bright color</p>
+                        </div>
+                    </div>
+
+                    <div className="p-4 flex gap-2 justify-center pointer-events-auto bg-gradient-to-t from-black/60 to-transparent">
+                        {Object.entries(COLOR_PRESETS).map(([name, preset]) => (
+                            <button
+                                key={name}
+                                onClick={() => {
+                                    setColorRange(preset);
+                                    startTracking();
+                                }}
+                                className="px-3 py-2 text-xs font-bold rounded-lg bg-black/60 border border-white/20 hover:border-cyan-400 capitalize"
+                            >
+                                {name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {phase === 'tracking' && (
+                <div className="flex-1 flex flex-col justify-end pb-4">
+                    <div className="p-3 bg-gradient-to-t from-black/80 via-black/60 to-transparent">
+
+                        <div className="flex justify-between items-center mb-3 gap-2 px-2">
+                            <div className="bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full border border-white/20">
+                                <span className="text-xs text-slate-400">Reps:</span>
+                                <span className="text-lg font-black text-cyan-400 ml-2">{repCount}</span>
+                            </div>
+                            <div className="bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full border border-white/20">
+                                <span className="text-xs text-slate-400">Peak:</span>
+                                <span className="text-lg font-black text-green-400 ml-2">{peakVelocity.toFixed(2)}</span>
+                            </div>
+                            <div className={`bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-full border ${trackingConfidence > 0.7 ? 'border-green-500' : 'border-red-500'}`}>
+                                <span className="text-xs text-slate-400">Track:</span>
+                                <span className={`text-xs font-bold ml-2 ${trackingConfidence > 0.7 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {(trackingConfidence * 100).toFixed(0)}%
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="text-center mb-3">
+                            <div className="text-6xl font-black font-mono tabular-nums text-yellow-400 drop-shadow-lg">
+                                {velocity.toFixed(2)}
+                                <span className="text-base text-yellow-500/80 font-bold ml-1">m/s</span>
+                            </div>
+                            <div className={`text-xs font-bold uppercase tracking-wide mt-1 ${status === t.vbtStatusMeasuring ? 'text-green-400' : 'text-slate-400'}`}>
+                                {status}
+                            </div>
+                        </div>
+
+                        <button
                             onClick={stopSession}
-                            className="mt-8 bg-red-500/20 border-2 border-red-500 hover:bg-red-500/30 text-red-500 px-8 py-3 rounded-full font-bold uppercase tracking-wide pointer-events-auto transition-all"
-                         >
-                             Stop Session
-                         </button>
-                     </div>
-                 )}
-            </div>
+                            className="w-full bg-red-500/20 border-2 border-red-500 hover:bg-red-500/30 text-red-500 py-3 rounded-xl font-bold uppercase tracking-wide pointer-events-auto flex items-center justify-center gap-2"
+                        >
+                            <Square size={16} />
+                            Stop
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     </div>
   );
