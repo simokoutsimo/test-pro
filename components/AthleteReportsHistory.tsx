@@ -79,6 +79,8 @@ const AthleteReportsHistory: React.FC<AthleteReportsHistoryProps> = ({ lang, onB
         return Zap;
       case 'MART':
         return Activity;
+      case 'Growth':
+        return User;
       default:
         return Activity;
     }
@@ -92,6 +94,8 @@ const AthleteReportsHistory: React.FC<AthleteReportsHistoryProps> = ({ lang, onB
         return 'text-cyan-500 bg-cyan-50 border-cyan-200';
       case 'MART':
         return 'text-orange-500 bg-orange-50 border-orange-200';
+      case 'Growth':
+        return 'text-green-600 bg-green-50 border-green-200';
       default:
         return 'text-slate-500 bg-slate-50 border-slate-200';
     }
@@ -110,6 +114,10 @@ const AthleteReportsHistory: React.FC<AthleteReportsHistoryProps> = ({ lang, onB
       case 'MART':
         const pmax = data.pMax || 0;
         return `Pmax: ${pmax.toFixed(1)} km/h`;
+      case 'Growth':
+        const maturityOffset = data.result?.maturityOffset || 0;
+        const status = maturityOffset < 0 ? 'Pre-PHV' : maturityOffset > 0 ? 'Post-PHV' : 'Circa-PHV';
+        return `${status} • ${maturityOffset > 0 ? '+' : ''}${maturityOffset.toFixed(2)}y`;
       default:
         return '';
     }

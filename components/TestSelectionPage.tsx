@@ -89,13 +89,13 @@ const TestSelectionPage: React.FC<TestSelectionPageProps> = ({ onSelect, onLogou
                     color="text-emerald-500"
                     comingSoon={false}
                 />
-                <TestCard 
+                <TestCard
                     type="growth"
                     title={t.testGrowth}
                     desc={t.testGrowthDesc}
                     icon={Ruler}
-                    color="text-indigo-500"
-                    comingSoon={true}
+                    color="text-emerald-500"
+                    comingSoon={false}
                 />
                 <TestCard 
                     type="speed"

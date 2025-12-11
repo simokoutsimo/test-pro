@@ -7,11 +7,14 @@ import TestSelectionPage from './components/TestSelectionPage';
 import MartTest from './components/MartTest';
 import VbtTest from './components/VbtTest';
 import JumpTest from './components/JumpTest';
+import PhvTest from './components/PhvTest';
 import JumpReportView from './components/JumpReportView';
 import VbtReportView from './components/VbtReportView';
+import PhvReportView from './components/PhvReportView';
 import AthleteReportsHistory from './components/AthleteReportsHistory';
 import { JumpSessionData } from './components/JumpTest';
 import { VbtSessionData } from './components/VbtTest';
+import { PHVSessionData } from './components/PhvTest';
 import { TestResult, Language, User, InputCacheData, TestType } from './types';
 import { translations } from './utils/translations';
 import { LogOut, ArrowLeft } from 'lucide-react';
@@ -33,6 +36,7 @@ const App: React.FC = () => {
   const [inputCache, setInputCache] = useState<InputCacheData | undefined>(undefined);
   const [jumpSessionData, setJumpSessionData] = useState<JumpSessionData | null>(null);
   const [vbtSessionData, setVbtSessionData] = useState<VbtSessionData | null>(null);
+  const [phvSessionData, setPhvSessionData] = useState<PHVSessionData | null>(null);
 
   // 5. Global Settings
   const [lang, setLang] = useState<Language>('fi');
@@ -177,6 +181,7 @@ const App: React.FC = () => {
           setAppView('input');
           setJumpSessionData(null);
           setVbtSessionData(null);
+          setPhvSessionData(null);
       } else if (appView === 'input') {
           setSelectedTest(null);
           setAppView('selection');
@@ -190,6 +195,11 @@ const App: React.FC = () => {
 
   const handleVbtReport = (sessionData: VbtSessionData) => {
       setVbtSessionData(sessionData);
+      setAppView('report');
+  };
+
+  const handlePhvReport = (sessionData: PHVSessionData) => {
+      setPhvSessionData(sessionData);
       setAppView('report');
   };
 
@@ -239,6 +249,12 @@ const App: React.FC = () => {
           return <JumpReportView lang={lang} sessionData={jumpSessionData} onBack={handleBack} />;
       }
       return <JumpTest lang={lang} onShowReport={handleJumpReport} onBack={handleBack} />;
+  }
+  if (selectedTest === 'growth') {
+      if (appView === 'report' && phvSessionData) {
+          return <PhvReportView lang={lang} sessionData={phvSessionData} onBack={handleBack} />;
+      }
+      return <PhvTest lang={lang} onBack={handleBack} onShowReport={handlePhvReport} />;
   }
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-slate-900 bg-slate-50">
