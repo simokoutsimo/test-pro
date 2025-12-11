@@ -19,6 +19,22 @@ const PhvReportView: React.FC<PhvReportViewProps> = ({ lang, sessionData, onBack
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  const formatYearsMonths = (decimalYears: number) => {
+    const absYears = Math.abs(decimalYears);
+    const years = Math.floor(absYears);
+    const months = Math.round((absYears - years) * 12);
+
+    const sign = decimalYears < 0 ? '-' : decimalYears > 0 ? '+' : '';
+
+    if (years === 0) {
+      return `${sign}${months}${lang === 'fi' ? 'kk' : 'mo'}`;
+    } else if (months === 0) {
+      return `${sign}${years}${lang === 'fi' ? 'v' : 'y'}`;
+    } else {
+      return `${sign}${years}${lang === 'fi' ? 'v' : 'y'} ${months}${lang === 'fi' ? 'kk' : 'mo'}`;
+    }
+  };
+
   const handleSaveReport = async () => {
     if (!athleteName.trim()) {
       alert(t.phvErrorName);
@@ -141,8 +157,7 @@ const PhvReportView: React.FC<PhvReportViewProps> = ({ lang, sessionData, onBack
           <div className="text-right">
             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.phvMaturityOffset}</div>
             <div className="text-4xl font-black text-slate-900">
-              {result.maturityOffset > 0 ? '+' : ''}{result.maturityOffset.toFixed(2)}{' '}
-              <span className="text-lg text-slate-400 font-medium">{lang === 'fi' ? 'vuotta' : 'years'}</span>
+              {formatYearsMonths(result.maturityOffset)}
             </div>
           </div>
         </div>
@@ -179,12 +194,12 @@ const PhvReportView: React.FC<PhvReportViewProps> = ({ lang, sessionData, onBack
               <div className="text-sm opacity-90">
                 {result.maturityOffset < 0 ? (
                   <p>
-                    <strong>{Math.abs(result.maturityOffset).toFixed(1)}</strong> {t.phvYearsBefore}.{' '}
+                    <strong>{formatYearsMonths(Math.abs(result.maturityOffset))}</strong> {t.phvYearsBefore}.{' '}
                     {t.phvExpectedAt} <strong>{result.predictedAgeAtPHV.toFixed(1)}</strong>.
                   </p>
                 ) : result.maturityOffset > 0 ? (
                   <p>
-                    <strong>{result.maturityOffset.toFixed(1)}</strong> {t.phvYearsAfter}.{' '}
+                    <strong>{formatYearsMonths(result.maturityOffset)}</strong> {t.phvYearsAfter}.{' '}
                     {t.phvPeakWasAt} <strong>{result.predictedAgeAtPHV.toFixed(1)}</strong>.
                   </p>
                 ) : (
