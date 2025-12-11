@@ -7,6 +7,10 @@ import TestSelectionPage from './components/TestSelectionPage';
 import MartTest from './components/MartTest';
 import VbtTest from './components/VbtTest';
 import JumpTest from './components/JumpTest';
+import JumpReportView from './components/JumpReportView';
+import VbtReportView from './components/VbtReportView';
+import { JumpSessionData } from './components/JumpTest';
+import { VbtSessionData } from './components/VbtTest';
 import { TestResult, Language, User, InputCacheData, TestType } from './types';
 import { translations } from './utils/translations';
 import { LogOut, ArrowLeft } from 'lucide-react';
@@ -26,6 +30,8 @@ const App: React.FC = () => {
   // 4. Data State
   const [resultData, setResultData] = useState<TestResult | null>(null);
   const [inputCache, setInputCache] = useState<InputCacheData | undefined>(undefined);
+  const [jumpSessionData, setJumpSessionData] = useState<JumpSessionData | null>(null);
+  const [vbtSessionData, setVbtSessionData] = useState<VbtSessionData | null>(null);
 
   // 5. Global Settings
   const [lang, setLang] = useState<Language>('fi');
@@ -164,11 +170,22 @@ const App: React.FC = () => {
   const handleBack = () => {
       if (appView === 'report') {
           setAppView('input');
+          setJumpSessionData(null);
+          setVbtSessionData(null);
       } else if (appView === 'input') {
-          // Back to selection
           setSelectedTest(null);
           setAppView('selection');
       }
+  };
+
+  const handleJumpReport = (sessionData: JumpSessionData) => {
+      setJumpSessionData(sessionData);
+      setAppView('report');
+  };
+
+  const handleVbtReport = (sessionData: VbtSessionData) => {
+      setVbtSessionData(sessionData);
+      setAppView('report');
   };
 
   const toggleLang = () => {
@@ -202,10 +219,16 @@ const App: React.FC = () => {
 
   // 4. Test Selected & Plan OK -> Input/Report
   if (selectedTest === 'vbt') {
-      return <VbtTest lang={lang} onBack={handleBack} />;
+      if (appView === 'report' && vbtSessionData) {
+          return <VbtReportView lang={lang} sessionData={vbtSessionData} onBack={handleBack} />;
+      }
+      return <VbtTest lang={lang} onBack={handleBack} onShowReport={handleVbtReport} />;
   }
   if (selectedTest === 'jump') {
-      return <JumpTest lang={lang} />;
+      if (appView === 'report' && jumpSessionData) {
+          return <JumpReportView lang={lang} sessionData={jumpSessionData} onBack={handleBack} />;
+      }
+      return <JumpTest lang={lang} onShowReport={handleJumpReport} />;
   }
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-slate-900 bg-slate-50">

@@ -3,41 +3,48 @@ import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
 
-// Nämä kirjastot ladataan globaalisti <script>-tageilla, joten tarvitsemme tyyppimääritelmät.
-declare const Pose: any;
-declare const POSE_CONNECTIONS: any;
-declare const drawConnectors: any;
-declare const drawLandmarks: any;
-
 interface JumpTestProps {
     lang?: Language;
+    onShowReport?: (data: JumpSessionData) => void;
 }
 
-const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
+export interface JumpData {
+    height: number;
+    flightTime: number;
+    contactTime: number;
+    timestamp: number;
+    rsi?: number;
+}
+
+export interface JumpSessionData {
+    mode: 'cmj' | 'rsi';
+    athleteName: string;
+    date: string;
+    jumps: JumpData[];
+}
+
+const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
     const t = translations[lang];
-    // 1. REFs SUORAA DOM-MANIPULAATIOTA VARTEN
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    
-    // 2. USESTATE VAIN HARVOIN PÄIVITTYVÄÄ UI-TILAA VARTEN
+
     const [uiState, setUiState] = useState({
-        height: "0.0 cm",
-        flight: "0 ms",
-        contact: "0 ms",
-        angle: "--°",
-        fps: "Phys: 0 / AI: 0",
+        height: "0.0",
+        flight: "0",
+        contact: "0",
+        rsi: "0.00",
+        fps: "0",
         jumps: 0
     });
-    const [mode, setMode] = useState('cmj');
+    const [mode, setMode] = useState<'cmj' | 'rsi'>('cmj');
     const [isSystemActive, setSystemActive] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [recentJumps, setRecentJumps] = useState<JumpData[]>([]);
 
-    // 3. USEREF KAIKKEEN KORKEAN TAAJUUDEN DATAAN (EI RE-RENDEREITÄ)
     const logicState = useRef({
-        // Fysiikka
         tapeY: 0,
         baseLineY: 0,
-        phase: 'GROUND', // GROUND, FLIGHT
+        phase: 'GROUND',
         t_takeoff: 0,
         t_landing: 0,
         jumpHeight: 0,
@@ -45,90 +52,48 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
         contactTime: 0,
         jumpCount: 0,
         lastLandingTime: 0,
-        // AI
-        poseLandmarks: null,
-        kneeAngle: 0,
-        aiProcessing: false,
-        // Suorituskyky
+        allJumps: [] as JumpData[],
+        positionHistory: [] as number[],
         framesPhys: 0,
-        framesAI: 0,
         lastFpsCheck: 0,
-        // Loop control
         animationFrameId: 0,
-        pose: null as any,
         autoStopTimeout: null as any,
+        sessionStartTime: 0,
     }).current;
 
-    // Test-specific configurations
     const TEST_CONFIG = {
         cmj: {
             tapeBrightness: 220,
-            threshold: 0.025,
-            minFlightTime: 100,
+            threshold: 0.020,
+            minFlightTime: 150,
             maxFlightTime: 1500,
-            autoStopDelay: 3000
+            autoStopDelay: 5000,
+            smoothingFrames: 5
         },
         rsi: {
             tapeBrightness: 220,
-            threshold: 0.020, // Tarkempi tunnistus RSI:lle
-            minFlightTime: 80,
+            threshold: 0.015,
+            minFlightTime: 100,
             maxFlightTime: 1000,
-            autoStopDelay: 3000,
-            minContactTime: 50,
-            maxContactTime: 3000
+            autoStopDelay: 5000,
+            minContactTime: 80,
+            maxContactTime: 2000,
+            smoothingFrames: 5
         }
     };
     const g = 9.81;
 
-    // --- APUFUNKTIOT (Pysyvät samoina) ---
-    const calculateAngle = (a: any, b: any, c: any) => {
-        const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
-        let angle = Math.abs(rad * 180.0 / Math.PI);
-        if (angle > 180.0) angle = 360 - angle;
-        return angle;
-    };
-
-    // --- AI-TULOSTEN KÄSITTELY ---
-    const onPoseResults = (results: any) => {
-        logicState.poseLandmarks = results.poseLandmarks;
-        logicState.aiProcessing = false;
-        logicState.framesAI++;
-        if (results.poseLandmarks) {
-            const l = results.poseLandmarks;
-            const p1 = l[24], p2 = l[26], p3 = l[28];
-            if (p1.visibility > 0.5 && p2.visibility > 0.5 && p3.visibility > 0.5) {
-               logicState.kneeAngle = Math.round(calculateAngle(p1, p2, p3));
-            }
-        }
-    };
-
-    // --- KÄYNNISTYS & ALUSTUS ---
     const startSystem = useCallback(async () => {
         setIsLoading(true);
 
-        // Lataa MediaPipe-skriptit dynaamisesti
-        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js');
-        await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
-        const poseScript = await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js');
-
-        if(!poseScript) {
-            alert(t.jumpLoading.replace('...', ' epäonnistui'));
-            setIsLoading(false);
-            return;
-        }
-        
-        logicState.pose = new Pose({locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
-        logicState.pose.setOptions({
-            modelComplexity: 0,
-            smoothLandmarks: true,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-        logicState.pose.onResults(onPoseResults);
-
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 },
+                    frameRate: { ideal: 60, max: 120 }
+                }
             });
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
@@ -137,6 +102,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
                         canvasRef.current.width = videoRef.current.videoWidth;
                         canvasRef.current.height = videoRef.current.videoHeight;
                     }
+                    logicState.sessionStartTime = Date.now();
                     setIsLoading(false);
                     setSystemActive(true);
                 };
@@ -146,89 +112,71 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
             setIsLoading(false);
         }
     }, [logicState, t]);
-    
-    const loadScript = (src: string) => {
-        return new Promise((resolve) => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.crossOrigin = 'anonymous';
-            script.onload = () => resolve(true);
-            script.onerror = () => resolve(false);
-            document.body.appendChild(script);
-        });
-    }
 
-    // --- PÄÄLOOPPI & FYSIIKKA (useEffect) ---
     useEffect(() => {
         if (!isSystemActive) return;
 
         const ctx = canvasRef.current!.getContext('2d')!;
         logicState.lastFpsCheck = performance.now();
-        
-        // Kalibroidaan lähtötaso 2s käynnistyksen jälkeen
-        setTimeout(() => { 
-            logicState.baseLineY = logicState.tapeY; 
-            console.log("Hybridi-järjestelmä kalibroitu. Lähtötaso (Y):", logicState.baseLineY);
+
+        setTimeout(() => {
+            logicState.baseLineY = logicState.tapeY;
         }, 2000);
 
         const loop = () => {
             const now = performance.now();
             logicState.framesPhys++;
-            
+
             ctx.drawImage(videoRef.current!, 0, 0, canvasRef.current!.width, canvasRef.current!.height);
 
-            // 1. FYSIIKKA (Vihreän teipin seuranta)
-            const roi = { x: ctx.canvas.width*0.4, y: 0, w: ctx.canvas.width*0.2, h: ctx.canvas.height };
+            const roi = { x: ctx.canvas.width*0.35, y: 0, w: ctx.canvas.width*0.3, h: ctx.canvas.height };
             const tapeY = findTape(ctx, roi);
             if (tapeY !== null) {
-                logicState.tapeY = tapeY;
-                updatePhysics(tapeY, now / 1000);
-                
+                logicState.positionHistory.push(tapeY);
+                if (logicState.positionHistory.length > TEST_CONFIG[mode].smoothingFrames) {
+                    logicState.positionHistory.shift();
+                }
+
+                const smoothedY = logicState.positionHistory.reduce((a, b) => a + b, 0) / logicState.positionHistory.length;
+                logicState.tapeY = smoothedY;
+                updatePhysics(smoothedY, now / 1000);
+
                 ctx.fillStyle = '#0f0';
+                ctx.shadowColor = '#0f0';
+                ctx.shadowBlur = 15;
                 ctx.beginPath();
-                ctx.arc(ctx.canvas.width/2, tapeY * ctx.canvas.height, 10, 0, 2 * Math.PI);
+                ctx.arc(ctx.canvas.width/2, smoothedY * ctx.canvas.height, 12, 0, 2 * Math.PI);
                 ctx.fill();
-            }
-            
-            // 2. AI (Lähetetään kuva throttlatusti)
-            if (videoRef.current && !logicState.aiProcessing) {
-                logicState.aiProcessing = true;
-                logicState.pose.send({ image: videoRef.current });
-            }
-            
-            // 3. VISUALISOINTI (Piirretään luuranko)
-            if (logicState.poseLandmarks) {
-                drawConnectors(ctx, logicState.poseLandmarks, POSE_CONNECTIONS, { color: '#00f', lineWidth: 2 });
-                drawLandmarks(ctx, logicState.poseLandmarks, { color: '#00f', radius: 3 });
+                ctx.shadowBlur = 0;
             }
 
             logicState.animationFrameId = requestAnimationFrame(loop);
         };
-        
-        // UI-päivityslenkki (hidas)
+
         const uiInterval = setInterval(() => {
             const now = performance.now();
             const elapsed = now - logicState.lastFpsCheck;
-            const physFps = (logicState.framesPhys / (elapsed / 1000)).toFixed(0);
-            const aiFps = (logicState.framesAI / (elapsed / 1000)).toFixed(0);
+            const fps = (logicState.framesPhys / (elapsed / 1000)).toFixed(0);
+
+            const rsi = logicState.contactTime > 0 ? logicState.flightTime / logicState.contactTime : 0;
 
             setUiState({
-                height: logicState.jumpHeight.toFixed(1) + " cm",
-                flight: logicState.flightTime.toFixed(0) + " ms",
-                contact: logicState.contactTime.toFixed(0) + " ms",
-                angle: logicState.kneeAngle + "°",
-                fps: `${t.jumpPhys}: ${physFps} / ${t.jumpAI}: ${aiFps}`,
+                height: logicState.jumpHeight.toFixed(1),
+                flight: logicState.flightTime.toFixed(0),
+                contact: logicState.contactTime.toFixed(0),
+                rsi: rsi.toFixed(2),
+                fps: fps,
                 jumps: logicState.jumpCount
             });
 
+            setRecentJumps([...logicState.allJumps].slice(-3).reverse());
+
             logicState.lastFpsCheck = now;
             logicState.framesPhys = 0;
-            logicState.framesAI = 0;
-        }, 500); // Päivitetään UI vain 2 kertaa sekunnissa
+        }, 300);
 
         loop();
 
-        // Siivousfunktio
         return () => {
             cancelAnimationFrame(logicState.animationFrameId);
             clearInterval(uiInterval);
@@ -240,7 +188,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
             }
         };
 
-    }, [isSystemActive, logicState, t]);
+    }, [isSystemActive, logicState, t, mode]);
 
     const findTape = (ctx: CanvasRenderingContext2D, roi: any) => {
         const config = TEST_CONFIG[mode as 'cmj' | 'rsi'];
@@ -259,14 +207,13 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
     };
 
     const updatePhysics = (y: number, t: number) => {
-        const config = TEST_CONFIG[mode as 'cmj' | 'rsi'];
+        const config = TEST_CONFIG[mode];
 
         if (logicState.phase === 'GROUND') {
             if (y < logicState.baseLineY - config.threshold) {
                 logicState.phase = 'FLIGHT';
                 logicState.t_takeoff = t;
 
-                // Laske kontaktiaika (vain RSI:ssä)
                 if (mode === 'rsi' && logicState.t_landing > 0) {
                     const contactMs = (t - logicState.t_landing) * 1000;
                     const rsiConfig = TEST_CONFIG.rsi;
@@ -275,7 +222,6 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
                     }
                 }
 
-                // Tyhjennä autostop jos oli asetettu
                 if (logicState.autoStopTimeout) {
                     clearTimeout(logicState.autoStopTimeout);
                     logicState.autoStopTimeout = null;
@@ -290,11 +236,23 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
                 if (flightTimeMs > config.minFlightTime && flightTimeMs < config.maxFlightTime) {
                     logicState.flightTime = flightTimeMs;
                     const t_sec = flightTimeMs / 1000;
-                    logicState.jumpHeight = (g * Math.pow(t_sec, 2) / 8) * 100;
+                    const jumpHeight = (g * Math.pow(t_sec, 2) / 8) * 100;
+                    logicState.jumpHeight = jumpHeight;
+
+                    const rsi = logicState.contactTime > 0 ? flightTimeMs / logicState.contactTime : undefined;
+
+                    const jumpData: JumpData = {
+                        height: jumpHeight,
+                        flightTime: flightTimeMs,
+                        contactTime: logicState.contactTime,
+                        timestamp: Date.now(),
+                        rsi: rsi
+                    };
+
+                    logicState.allJumps.push(jumpData);
                     logicState.jumpCount++;
                     logicState.lastLandingTime = t;
 
-                    // Aseta autostop
                     if (logicState.autoStopTimeout) {
                         clearTimeout(logicState.autoStopTimeout);
                     }
@@ -312,12 +270,20 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
             clearTimeout(logicState.autoStopTimeout);
             logicState.autoStopTimeout = null;
         }
+
+        if (logicState.allJumps.length > 0 && onShowReport) {
+            const sessionData: JumpSessionData = {
+                mode: mode,
+                athleteName: 'Athlete',
+                date: new Date().toISOString(),
+                jumps: logicState.allJumps
+            };
+            onShowReport(sessionData);
+        }
     };
     
-    const containerStyle = {...styles.container, position: 'fixed' as const, top: 0, left: 0, zIndex: 1000};
-
     return (
-        <div style={containerStyle}>
+        <div style={styles.container}>
             <video ref={videoRef} style={styles.video} autoPlay playsInline muted />
             <canvas ref={canvasRef} style={styles.canvas} />
 
@@ -348,61 +314,89 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
                 </div>
             )}
 
-            <div style={styles.ui}>
-                <div style={{...styles.hudPanel, width: '200px'}}>
-                    <div style={{...styles.label, marginBottom: '5px'}}>{mode === 'cmj' ? t.jumpCMJ : t.jumpRSI}</div>
+            {isSystemActive && (
+                <div style={styles.ui}>
+                    <div style={styles.header}>
+                        <div style={styles.modeBadge}>{mode === 'cmj' ? t.jumpCMJ : t.jumpRSI}</div>
+                        <div style={styles.jumpCounter}>{t.jumpJumps}: {uiState.jumps}</div>
+                    </div>
 
-                    <div style={styles.label}>{t.jumpHeight}</div>
-                    <div style={{...styles.bigVal, ...styles.highlight}}>{uiState.height}</div>
+                    <div style={styles.mainMetrics}>
+                        <div style={styles.metricCard}>
+                            <div style={styles.metricLabel}>{t.jumpHeight}</div>
+                            <div style={styles.metricValue}>{uiState.height} <span style={styles.unit}>cm</span></div>
+                        </div>
+                        <div style={styles.metricCard}>
+                            <div style={styles.metricLabel}>{t.jumpFlightTime}</div>
+                            <div style={styles.metricValue}>{uiState.flight} <span style={styles.unit}>ms</span></div>
+                        </div>
+                        {mode === 'rsi' && (
+                            <>
+                                <div style={styles.metricCard}>
+                                    <div style={styles.metricLabel}>{t.jumpContactTime}</div>
+                                    <div style={styles.metricValue}>{uiState.contact} <span style={styles.unit}>ms</span></div>
+                                </div>
+                                <div style={styles.metricCard}>
+                                    <div style={styles.metricLabel}>RSI</div>
+                                    <div style={styles.metricValue}>{uiState.rsi}</div>
+                                </div>
+                            </>
+                        )}
+                    </div>
 
-                    <div style={{...styles.label, marginTop: '5px'}}>{t.jumpFlightTime}</div>
-                    <div style={styles.bigVal}>{uiState.flight}</div>
-
-                    {mode === 'rsi' && (
-                        <>
-                            <div style={{...styles.label, marginTop: '5px'}}>{t.jumpContactTime}</div>
-                            <div style={styles.bigVal}>{uiState.contact}</div>
-                        </>
+                    {recentJumps.length > 0 && (
+                        <div style={styles.recentJumps}>
+                            <div style={styles.recentTitle}>Recent Jumps</div>
+                            {recentJumps.map((jump, idx) => (
+                                <div key={idx} style={styles.recentJumpCard}>
+                                    <span style={styles.recentJumpHeight}>{jump.height.toFixed(1)} cm</span>
+                                    <span style={styles.recentJumpTime}>{jump.flightTime.toFixed(0)} ms</span>
+                                    {mode === 'rsi' && jump.rsi && (
+                                        <span style={styles.recentJumpRsi}>RSI: {jump.rsi.toFixed(2)}</span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     )}
 
-                    <div style={{...styles.label, marginTop: '10px', fontSize: '12px'}}>{t.jumpJumps}: {uiState.jumps}</div>
+                    <button onClick={stopSystem} style={styles.stopBtn}>{t.jumpStop}</button>
 
-                    {isSystemActive && (
-                        <button onClick={stopSystem} style={{...styles.stopBtn, marginTop: '10px'}}>{t.jumpStop}</button>
-                    )}
+                    <div style={styles.fps}>FPS: {uiState.fps}</div>
                 </div>
-                <div style={{...styles.hudPanel, ...styles.kneeIndicator}}>
-                    <div style={styles.label}>{t.jumpKneeAngle}</div>
-                    <div style={styles.bigVal}>{uiState.angle}</div>
-                    <div style={styles.label}>{uiState.fps}</div>
-                </div>
-            </div>
+            )}
         </div>
     );
 }
 
-// Koska emme käytä CSS-tiedostoja, määritellään tyylit objekteina
 const styles = {
-    container: { position: 'relative', width: '100vw', height: '100vh', background: '#000', fontFamily: 'Roboto Mono, monospace', color: 'white', overflow: 'hidden' } as React.CSSProperties,
+    container: { position: 'fixed' as const, top: 0, left: 0, width: '100vw', height: '100vh', background: '#000', fontFamily: 'system-ui, sans-serif', color: 'white', overflow: 'hidden', zIndex: 1000 } as React.CSSProperties,
     video: { position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, transform: 'scaleX(-1)' } as React.CSSProperties,
     canvas: { position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: 2, transform: 'scaleX(-1)' } as React.CSSProperties,
-    ui: { position: 'absolute', width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' } as React.CSSProperties,
-    overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20, display: 'flex', justifyContent: 'center', alignItems: 'center'} as React.CSSProperties,
-    hudPanel: { background: 'rgba(0,0,0,0.6)', padding: '10px', margin: '10px', borderRadius: '8px', backdropFilter: 'blur(5px)', borderLeft: '4px solid #00f', pointerEvents: 'auto' } as React.CSSProperties,
-    bigVal: { fontSize: '28px', fontWeight: 'bold', color: '#fff' } as React.CSSProperties,
-    label: { fontSize: '10px', color: '#aaa', textTransform: 'uppercase' } as React.CSSProperties,
-    highlight: { color: '#0f0' } as React.CSSProperties,
-    kneeIndicator: { position: 'absolute', bottom: '20px', right: '20px', textAlign: 'right' } as React.CSSProperties,
-    switchContainer: { display: 'flex', gap: '10px', marginTop: '5px' } as React.CSSProperties,
-    btnToggle: { background: '#333', color: 'white', border: '1px solid #555', padding: '5px 10px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', pointerEvents: 'auto' } as React.CSSProperties,
-    btnActive: { background: '#007AFF', borderColor: '#007AFF' } as React.CSSProperties,
-    startBtn: { pointerEvents: 'auto', padding: '15px 50px', borderRadius: '30px', border: 'none', background: '#00f', color: 'white', fontSize: '18px', fontWeight: 'bold', boxShadow: '0 0 30px rgba(0,0,255,0.5)', zIndex: 20, cursor: 'pointer', marginTop: '20px' } as React.CSSProperties,
-    stopBtn: { pointerEvents: 'auto', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #f00', background: 'rgba(255,0,0,0.2)', color: '#f00', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' } as React.CSSProperties,
-    loader: { fontSize: '14px', color: '#aaa' } as React.CSSProperties,
-    menuContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', background: 'rgba(0,0,0,0.8)', padding: '40px', borderRadius: '12px', backdropFilter: 'blur(10px)' } as React.CSSProperties,
-    menuTitle: { fontSize: '18px', fontWeight: 'bold', color: '#fff', textAlign: 'center' } as React.CSSProperties,
-    btnToggleLarge: { background: '#333', color: 'white', border: '2px solid #555', padding: '15px 30px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', pointerEvents: 'auto', minWidth: '100px' } as React.CSSProperties
+    ui: { position: 'absolute', width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none', display: 'flex', flexDirection: 'column', padding: '20px' } as React.CSSProperties,
+    overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(10px)' } as React.CSSProperties,
+    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', pointerEvents: 'auto' } as React.CSSProperties,
+    modeBadge: { background: 'rgba(0,122,255,0.9)', padding: '8px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 'bold', boxShadow: '0 4px 15px rgba(0,122,255,0.3)' } as React.CSSProperties,
+    jumpCounter: { background: 'rgba(0,0,0,0.6)', padding: '8px 16px', borderRadius: '20px', fontSize: '18px', fontWeight: 'bold', backdropFilter: 'blur(10px)' } as React.CSSProperties,
+    mainMetrics: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '20px', pointerEvents: 'none' } as React.CSSProperties,
+    metricCard: { background: 'rgba(0,0,0,0.7)', borderRadius: '16px', padding: '16px', backdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.1)' } as React.CSSProperties,
+    metricLabel: { fontSize: '11px', color: '#aaa', textTransform: 'uppercase', marginBottom: '8px', letterSpacing: '0.5px' } as React.CSSProperties,
+    metricValue: { fontSize: '32px', fontWeight: 'bold', color: '#0f0', fontFamily: 'monospace' } as React.CSSProperties,
+    unit: { fontSize: '14px', color: '#888', marginLeft: '4px' } as React.CSSProperties,
+    recentJumps: { background: 'rgba(0,0,0,0.6)', borderRadius: '12px', padding: '12px', backdropFilter: 'blur(10px)', marginBottom: '20px', pointerEvents: 'none' } as React.CSSProperties,
+    recentTitle: { fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 'bold' } as React.CSSProperties,
+    recentJumpCard: { background: 'rgba(255,255,255,0.05)', borderRadius: '8px', padding: '8px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', fontSize: '12px' } as React.CSSProperties,
+    recentJumpHeight: { color: '#0f0', fontWeight: 'bold' } as React.CSSProperties,
+    recentJumpTime: { color: '#fff' } as React.CSSProperties,
+    recentJumpRsi: { color: '#ffa500' } as React.CSSProperties,
+    stopBtn: { pointerEvents: 'auto', marginTop: 'auto', padding: '16px', borderRadius: '12px', border: '2px solid #f00', background: 'rgba(255,0,0,0.2)', color: '#f00', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', backdropFilter: 'blur(10px)' } as React.CSSProperties,
+    fps: { fontSize: '10px', color: '#555', marginTop: '8px', textAlign: 'center', pointerEvents: 'none' } as React.CSSProperties,
+    loader: { fontSize: '16px', color: '#fff' } as React.CSSProperties,
+    menuContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', background: 'rgba(0,0,0,0.9)', padding: '40px', borderRadius: '20px', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)' } as React.CSSProperties,
+    menuTitle: { fontSize: '20px', fontWeight: 'bold', color: '#fff', textAlign: 'center' } as React.CSSProperties,
+    switchContainer: { display: 'flex', gap: '12px', marginTop: '5px' } as React.CSSProperties,
+    btnToggleLarge: { background: '#222', color: 'white', border: '2px solid #444', padding: '16px 32px', borderRadius: '12px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', pointerEvents: 'auto', minWidth: '110px' } as React.CSSProperties,
+    btnActive: { background: '#007AFF', borderColor: '#007AFF', boxShadow: '0 4px 20px rgba(0,122,255,0.4)' } as React.CSSProperties,
+    startBtn: { pointerEvents: 'auto', padding: '18px 60px', borderRadius: '30px', border: 'none', background: 'linear-gradient(135deg, #007AFF, #0051D5)', color: 'white', fontSize: '18px', fontWeight: 'bold', boxShadow: '0 8px 30px rgba(0,122,255,0.5)', zIndex: 20, cursor: 'pointer', marginTop: '20px' } as React.CSSProperties
 };
-
 
 export default JumpTest;
