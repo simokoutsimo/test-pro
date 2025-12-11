@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Ruler, User, Calendar, Weight, TrendingUp } from 'lucide-react';
+import { ArrowLeft, Ruler, User, Calendar, Weight, TrendingUp, Globe } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../utils/translations';
 import { calculatePHV, PHVInputData, PHVResult } from '../utils/phvCalculations';
@@ -8,6 +8,7 @@ interface PhvTestProps {
   lang: Language;
   onBack?: () => void;
   onShowReport?: (data: PHVSessionData) => void;
+  onToggleLang?: () => void;
 }
 
 export interface PHVSessionData {
@@ -17,7 +18,7 @@ export interface PHVSessionData {
   result: PHVResult;
 }
 
-const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
+const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleLang }) => {
   const t = translations[lang];
 
   const [athleteName, setAthleteName] = useState('');
@@ -33,35 +34,35 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
     const newErrors: string[] = [];
 
     if (!athleteName.trim()) {
-      newErrors.push('Athlete name is required');
+      newErrors.push(t.phvErrorName);
     }
 
     const ageY = parseFloat(ageYears);
     const ageM = parseFloat(ageMonths);
     if (!ageYears || isNaN(ageY) || ageY < 6 || ageY > 18) {
-      newErrors.push('Age must be between 6 and 18 years');
+      newErrors.push(t.phvErrorAge);
     }
     if (isNaN(ageM) || ageM < 0 || ageM > 11) {
-      newErrors.push('Months must be between 0 and 11');
+      newErrors.push(t.phvErrorMonths);
     }
 
     const h = parseFloat(height);
     if (!height || isNaN(h) || h < 80 || h > 220) {
-      newErrors.push('Height must be between 80 and 220 cm');
+      newErrors.push(t.phvErrorHeight);
     }
 
     const sh = parseFloat(sittingHeight);
     if (!sittingHeight || isNaN(sh) || sh < 40 || sh > 120) {
-      newErrors.push('Sitting height must be between 40 and 120 cm');
+      newErrors.push(t.phvErrorSitting);
     }
 
     if (h && sh && sh >= h) {
-      newErrors.push('Sitting height must be less than standing height');
+      newErrors.push(t.phvErrorSittingLess);
     }
 
     const w = parseFloat(weight);
     if (!weight || isNaN(w) || w < 15 || w > 150) {
-      newErrors.push('Weight must be between 15 and 150 kg');
+      newErrors.push(t.phvErrorWeight);
     }
 
     setErrors(newErrors);
@@ -108,26 +109,37 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors font-bold"
-        >
-          <ArrowLeft size={18} />
-          Back
-        </button>
-      )}
+      <div className="flex items-center justify-between">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors font-bold"
+          >
+            <ArrowLeft size={18} />
+            {t.selectTestTitle}
+          </button>
+        )}
+        {onToggleLang && (
+          <button
+            onClick={onToggleLang}
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700"
+          >
+            <Globe size={16} />
+            {lang === 'fi' ? 'EN' : 'FI'}
+          </button>
+        )}
+      </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-900 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Ruler className="text-emerald-500" size={24} />
             <h2 className="text-xl font-bold text-white uppercase tracking-wide">
-              {t.testGrowth || 'Growth Maturity Test'}
+              {t.phvTitle}
             </h2>
           </div>
           <button onClick={fillDemo} className="text-xs text-slate-400 hover:text-white underline">
-            Demo
+            {t.demoData}
           </button>
         </div>
 
@@ -135,17 +147,16 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
           <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
             <h3 className="font-bold text-emerald-900 mb-2 flex items-center gap-2">
               <TrendingUp size={18} />
-              Peak Height Velocity (PHV) Assessment
+              {t.phvSubtitle}
             </h3>
             <p className="text-sm text-emerald-800">
-              This test estimates biological maturity using the Mirwald et al. (2002) method. It predicts
-              years before/after Peak Height Velocity - the fastest point of growth during puberty.
+              {t.phvDescription}
             </p>
           </div>
 
           {errors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <h4 className="font-bold text-red-900 mb-2">Please correct the following:</h4>
+              <h4 className="font-bold text-red-900 mb-2">{t.phvCorrectFollowing}</h4>
               <ul className="list-disc list-inside space-y-1">
                 {errors.map((error, idx) => (
                   <li key={idx} className="text-sm text-red-800">
@@ -160,20 +171,20 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
             <div className="col-span-2">
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
                 <User size={14} className="inline mr-1" />
-                Athlete Name
+                {t.athleteName}
               </label>
               <input
                 type="text"
                 value={athleteName}
                 onChange={(e) => setAthleteName(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                placeholder="Enter athlete name"
+                placeholder={t.placeholderName}
               />
             </div>
 
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
-                Gender
+                {t.phvGender}
               </label>
               <div className="flex gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
@@ -184,7 +195,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
                     onChange={(e) => setGender(e.target.value as 'male' | 'female')}
                     className="w-4 h-4 text-emerald-500 focus:ring-emerald-500"
                   />
-                  <span className="font-medium text-slate-700">Male / Poika</span>
+                  <span className="font-medium text-slate-700">{t.phvMale}</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -194,7 +205,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
                     onChange={(e) => setGender(e.target.value as 'male' | 'female')}
                     className="w-4 h-4 text-emerald-500 focus:ring-emerald-500"
                   />
-                  <span className="font-medium text-slate-700">Female / Tyttö</span>
+                  <span className="font-medium text-slate-700">{t.phvFemale}</span>
                 </label>
               </div>
             </div>
@@ -204,14 +215,14 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
                 <Calendar size={14} className="inline mr-1" />
-                Age (Years)
+                {t.phvAgeYears}
               </label>
               <input
                 type="number"
                 value={ageYears}
                 onChange={(e) => setAgeYears(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                placeholder="e.g., 13"
+                placeholder="13"
                 min="6"
                 max="18"
                 step="1"
@@ -220,7 +231,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
 
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
-                Age (Months)
+                {t.phvAgeMonths}
               </label>
               <input
                 type="number"
@@ -237,14 +248,14 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
                 <Ruler size={14} className="inline mr-1" />
-                Height (cm)
+                {t.phvHeight}
               </label>
               <input
                 type="number"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                placeholder="e.g., 165.5"
+                placeholder="165.5"
                 min="80"
                 max="220"
                 step="0.1"
@@ -254,14 +265,14 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
                 <Ruler size={14} className="inline mr-1" />
-                Sitting Height (cm)
+                {t.phvSittingHeight}
               </label>
               <input
                 type="number"
                 value={sittingHeight}
                 onChange={(e) => setSittingHeight(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                placeholder="e.g., 85.0"
+                placeholder="85.0"
                 min="40"
                 max="120"
                 step="0.1"
@@ -271,14 +282,14 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
             <div>
               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
                 <Weight size={14} className="inline mr-1" />
-                Weight (kg)
+                {t.phvWeight}
               </label>
               <input
                 type="number"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
-                placeholder="e.g., 55.0"
+                placeholder="55.0"
                 min="15"
                 max="150"
                 step="0.1"
@@ -287,20 +298,12 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
           </div>
 
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-            <h4 className="font-bold text-slate-700 text-sm mb-2">Measurement Instructions:</h4>
+            <h4 className="font-bold text-slate-700 text-sm mb-2">{t.phvMeasurementInstructions}</h4>
             <ul className="text-sm text-slate-600 space-y-1 list-disc list-inside">
-              <li>
-                <strong>Sitting Height:</strong> Measured from sitting surface to top of head while sitting erect
-              </li>
-              <li>
-                <strong>Height:</strong> Standing height measured without shoes
-              </li>
-              <li>
-                <strong>Weight:</strong> Body weight measured in light clothing
-              </li>
-              <li>
-                <strong>Age:</strong> Current chronological age in years and months
-              </li>
+              <li>{t.phvInstrSitting}</li>
+              <li>{t.phvInstrHeight}</li>
+              <li>{t.phvInstrWeight}</li>
+              <li>{t.phvInstrAge}</li>
             </ul>
           </div>
 
@@ -309,7 +312,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport }) => {
             className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-6 rounded-lg uppercase tracking-wide transition-colors shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
           >
             <TrendingUp size={20} />
-            Calculate Maturity Status
+            {t.phvCalculate}
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ArrowLeft, Printer, Activity, Zap, TrendingDown, Gauge, Save, Check } from 'lucide-react';
+import { ArrowLeft, Printer, Activity, Zap, TrendingDown, Gauge, Save, Check, Globe } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Language } from '../types';
 import { translations } from '../utils/translations';
@@ -11,10 +11,11 @@ interface VbtReportViewProps {
   lang: Language;
   sessionData: VbtSessionData;
   onBack: () => void;
+  onToggleLang?: () => void;
 }
 
 const VbtReportView: React.FC<VbtReportViewProps> = ({
-  lang, sessionData, onBack
+  lang, sessionData, onBack, onToggleLang
 }) => {
   const t = translations[lang];
   const [athleteName, setAthleteName] = useState(sessionData.athleteName);
@@ -108,7 +109,16 @@ const VbtReportView: React.FC<VbtReportViewProps> = ({
                <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold text-sm">
                    <ArrowLeft size={16} /> {t.edit}
                </button>
-               <div className="flex gap-2">
+               <div className="flex gap-2 items-center">
+                   {onToggleLang && (
+                       <button
+                           onClick={onToggleLang}
+                           className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700"
+                       >
+                           <Globe size={16} />
+                           {lang === 'fi' ? 'EN' : 'FI'}
+                       </button>
+                   )}
                    {saveSuccess && (
                        <div className="flex items-center gap-2 text-green-600 font-bold text-sm">
                            <Check size={18} />

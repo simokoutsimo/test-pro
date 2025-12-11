@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-import { ArrowLeft, Camera, Target, Play, Square } from 'lucide-react';
+import { ArrowLeft, Camera, Target, Play, Square, Globe } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
 import { trackByColor, trackBrightestPoint, calibrateColorFromClick, ColorRange, COLOR_PRESETS, ROI, TrackingPoint } from '../utils/tracking';
@@ -9,6 +9,7 @@ interface VbtTestProps {
   lang: Language;
   onBack: () => void;
   onShowReport?: (data: VbtSessionData) => void;
+  onToggleLang?: () => void;
 }
 
 export interface RepData {
@@ -31,7 +32,7 @@ const CONFIG = {
     minBlobSize: 50
 };
 
-const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
+const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport, onToggleLang }) => {
   const t = translations[lang];
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -337,7 +338,15 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
                     <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">VBT</span>
                 </div>
 
-                <div className="w-10 h-10"></div>
+                {onToggleLang && (
+                    <button
+                        onClick={onToggleLang}
+                        className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center border border-white/20"
+                    >
+                        <Globe size={16} />
+                    </button>
+                )}
+                {!onToggleLang && <div className="w-10 h-10"></div>}
             </div>
 
             {phase === 'setup' && (

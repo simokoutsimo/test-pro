@@ -240,21 +240,21 @@ const App: React.FC = () => {
   // 4. Test Selected & Plan OK -> Input/Report
   if (selectedTest === 'vbt') {
       if (appView === 'report' && vbtSessionData) {
-          return <VbtReportView lang={lang} sessionData={vbtSessionData} onBack={handleBack} />;
+          return <VbtReportView lang={lang} sessionData={vbtSessionData} onBack={handleBack} onToggleLang={toggleLang} />;
       }
-      return <VbtTest lang={lang} onBack={handleBack} onShowReport={handleVbtReport} />;
+      return <VbtTest lang={lang} onBack={handleBack} onShowReport={handleVbtReport} onToggleLang={toggleLang} />;
   }
   if (selectedTest === 'jump') {
       if (appView === 'report' && jumpSessionData) {
-          return <JumpReportView lang={lang} sessionData={jumpSessionData} onBack={handleBack} />;
+          return <JumpReportView lang={lang} sessionData={jumpSessionData} onBack={handleBack} onToggleLang={toggleLang} />;
       }
-      return <JumpTest lang={lang} onShowReport={handleJumpReport} onBack={handleBack} />;
+      return <JumpTest lang={lang} onShowReport={handleJumpReport} onBack={handleBack} onToggleLang={toggleLang} />;
   }
   if (selectedTest === 'growth') {
       if (appView === 'report' && phvSessionData) {
-          return <PhvReportView lang={lang} sessionData={phvSessionData} onBack={handleBack} />;
+          return <PhvReportView lang={lang} sessionData={phvSessionData} onBack={handleBack} onToggleLang={toggleLang} />;
       }
-      return <PhvTest lang={lang} onBack={handleBack} onShowReport={handlePhvReport} />;
+      return <PhvTest lang={lang} onBack={handleBack} onShowReport={handlePhvReport} onToggleLang={toggleLang} />;
   }
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-slate-900 bg-slate-50">

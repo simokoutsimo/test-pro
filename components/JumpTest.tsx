@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Target, Play, Square, Footprints, ArrowLeft } from 'lucide-react';
+import { Target, Play, Square, Footprints, ArrowLeft, Globe } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
 import { trackByColor, calibrateColorFromClick, trackLowestPoint, ColorRange, COLOR_PRESETS, ROI } from '../utils/tracking';
@@ -9,6 +9,7 @@ interface JumpTestProps {
     lang?: Language;
     onShowReport?: (data: JumpSessionData) => void;
     onBack?: () => void;
+    onToggleLang?: () => void;
 }
 
 export interface JumpData {
@@ -26,7 +27,7 @@ export interface JumpSessionData {
     jumps: JumpData[];
 }
 
-const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport, onBack }) => {
+const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport, onBack, onToggleLang }) => {
     const t = translations[lang];
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -382,6 +383,32 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport, onBack }
                         >
                             <ArrowLeft size={16} />
                             Back
+                        </button>
+                    )}
+                    {onToggleLang && (
+                        <button
+                            onClick={onToggleLang}
+                            style={{
+                                position: 'absolute',
+                                top: '20px',
+                                right: '20px',
+                                background: 'rgba(0,0,0,0.6)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: '#fff',
+                                padding: '10px',
+                                borderRadius: '12px',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '40px',
+                                height: '40px',
+                                backdropFilter: 'blur(10px)'
+                            }}
+                        >
+                            <Globe size={16} />
                         </button>
                     )}
                     <div style={styles.menuContainer}>
