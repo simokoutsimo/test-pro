@@ -3,24 +3,43 @@ import React, { useState } from 'react';
 import { Check, Zap, Users, Crown, LogOut } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
+import { supabase } from '../utils/supabase';
 
 interface PricingPageProps {
   onPurchase: (plan: 'single' | 'pro' | 'coach') => void;
-  onBack: () => void; // Actually logout
+  onBack: () => void;
   lang: Language;
+  userId: string;
 }
 
-const PricingPage: React.FC<PricingPageProps> = ({ onPurchase, onBack, lang }) => {
+const PricingPage: React.FC<PricingPageProps> = ({ onPurchase, onBack, lang, userId }) => {
   const t = translations[lang];
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
 
-  const handleSelect = (plan: 'single' | 'pro' | 'coach') => {
+  const handleSelect = async (plan: 'single' | 'pro' | 'coach') => {
       setLoadingPlan(plan);
-      // Simulate Payment Processing
-      setTimeout(() => {
+
+      try {
+        const credits = plan === 'single' ? 1 : -1;
+
+        const { error } = await supabase
+          .from('user_profiles')
+          .update({
+            plan,
+            credits
+          })
+          .eq('id', userId);
+
+        if (error) throw error;
+
+        setTimeout(() => {
           onPurchase(plan);
           setLoadingPlan(null);
-      }, 2000);
+        }, 500);
+      } catch (error) {
+        console.error('Error updating plan:', error);
+        setLoadingPlan(null);
+      }
   };
 
   const PlanCard = ({ id, title, price, features, icon: Icon, color, popular }: any) => (

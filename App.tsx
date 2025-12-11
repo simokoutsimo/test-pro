@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import InputForm from './components/InputForm';
 import ReportView from './components/ReportView';
 import AuthPage from './components/AuthPage';
@@ -9,10 +9,12 @@ import VbtTest from './components/VbtTest';
 import { TestResult, Language, User, InputCacheData, TestType } from './types';
 import { translations } from './utils/translations';
 import { LogOut, ArrowLeft } from 'lucide-react';
+import { supabase } from './utils/supabase';
 
 const App: React.FC = () => {
   // 1. Auth & User State
   const [user, setUser] = useState<User | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
 
   // 2. View State within the App
   const [appView, setAppView] = useState<'selection' | 'input' | 'report'>('selection');
@@ -32,14 +34,76 @@ const App: React.FC = () => {
 
   const t = translations[lang];
 
+  useEffect(() => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        setUser({
+          id: session.user.id,
+          email: session.user.email!,
+          name: profile?.full_name || session.user.email!.split('@')[0],
+          plan: profile?.plan || null,
+          credits: profile?.credits || 0
+        });
+      }
+
+      setIsLoadingSession(false);
+    })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      (async () => {
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (!profile) {
+            await supabase
+              .from('user_profiles')
+              .insert({
+                id: session.user.id,
+                email: session.user.email!,
+                full_name: session.user.user_metadata?.full_name || session.user.email!.split('@')[0],
+                credits: 0
+              });
+          }
+
+          setUser({
+            id: session.user.id,
+            email: session.user.email!,
+            name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email!.split('@')[0],
+            plan: profile?.plan || null,
+            credits: profile?.credits || 0
+          });
+        } else {
+          setUser(null);
+        }
+      })();
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   // HANDLERS
 
   const handleLogin = (loggedInUser: User) => {
-      setUser({ ...loggedInUser, credits: 0 });
-      setAppView('selection'); // Go to test selection after login
+      setUser(loggedInUser);
+      setAppView('selection');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+      await supabase.auth.signOut();
       setUser(null);
       setAppView('selection');
       setSelectedTest(null);
@@ -54,9 +118,8 @@ const App: React.FC = () => {
 
   const handlePurchase = (plan: 'single' | 'pro' | 'coach') => {
       if (user) {
-          const credits = plan === 'single' ? 1 : Infinity;
+          const credits = plan === 'single' ? 1 : -1;
           setUser({ ...user, plan, credits });
-          // Remain on input view (or go there if not already)
           setAppView('input');
       }
   };
@@ -64,7 +127,7 @@ const App: React.FC = () => {
   const handleCalculate = (result: TestResult, inputData: InputCacheData) => {
     setResultData(result);
     setInputCache(inputData);
-    if (user?.credits === Infinity) {
+    if (user?.credits === -1) {
         setIsReportUnlocked(true);
     } else {
         setIsReportUnlocked(false);
@@ -73,11 +136,17 @@ const App: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleUnlockReport = () => {
+  const handleUnlockReport = async () => {
       if (!user) return;
-      if (user.credits > 0) {
-          if (user.credits !== Infinity) {
-             setUser({ ...user, credits: user.credits - 1 });
+      if (user.credits > 0 || user.credits === -1) {
+          if (user.credits !== -1) {
+             const newCredits = user.credits - 1;
+             setUser({ ...user, credits: newCredits });
+
+             await supabase
+               .from('user_profiles')
+               .update({ credits: newCredits })
+               .eq('id', user.id);
           }
           setIsReportUnlocked(true);
       } else {
@@ -107,6 +176,14 @@ const App: React.FC = () => {
 
   // ROUTING LOGIC
 
+  if (isLoadingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="w-12 h-12 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   // 1. Not Logged In -> Auth Page
   if (!user) {
       return <AuthPage onLogin={handleLogin} lang={lang} onToggleLang={toggleLang} />;
@@ -118,10 +195,8 @@ const App: React.FC = () => {
   }
 
   // 3. Test Selected -> Check Plan
-  // Note: MART test is simple and doesn't necessarily need premium credits logic for now,
-  // but let's keep it consistent. If user has no plan, go to pricing.
   if (!user.plan) {
-      return <PricingPage onPurchase={handlePurchase} onBack={handleBack} lang={lang} />;
+      return <PricingPage onPurchase={handlePurchase} onBack={handleBack} lang={lang} userId={user.id} />;
   }
 
   // 4. Test Selected & Plan OK -> Input/Report

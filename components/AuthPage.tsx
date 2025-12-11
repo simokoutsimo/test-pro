@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Mail, Lock, ArrowRight, User as UserIcon } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language, User } from '../types';
+import { supabase } from '../utils/supabase';
 
 interface AuthPageProps {
   onLogin: (user: User) => void;
@@ -26,36 +27,95 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, lang, onToggleLang }) => {
   const [name, setName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
+  const [error, setError] = useState<string>('');
 
-  const handleAuth = (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
-    // Simulate API call
-    setTimeout(() => {
-      onLogin({
-        id: isRegister ? `user-${Date.now()}` : 'user-123',
-        email: email,
-        name: isRegister ? name : email.split('@')[0],
-        plan: null, // User starts with no plan
-        credits: 0
-      });
+    setError('');
+
+    try {
+      if (isRegister) {
+        const { data: authData, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: name,
+            }
+          }
+        });
+
+        if (signUpError) throw signUpError;
+
+        if (authData.user) {
+          const { error: profileError } = await supabase
+            .from('user_profiles')
+            .insert({
+              id: authData.user.id,
+              email: authData.user.email!,
+              full_name: name,
+              credits: 0
+            });
+
+          if (profileError) throw profileError;
+
+          onLogin({
+            id: authData.user.id,
+            email: authData.user.email!,
+            name: name,
+            plan: null,
+            credits: 0
+          });
+        }
+      } else {
+        const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (signInError) throw signInError;
+
+        if (authData.user) {
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('*')
+            .eq('id', authData.user.id)
+            .maybeSingle();
+
+          onLogin({
+            id: authData.user.id,
+            email: authData.user.email!,
+            name: profile?.full_name || authData.user.email!.split('@')[0],
+            plan: profile?.plan || null,
+            credits: profile?.credits || 0
+          });
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Authentication failed');
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
-  const handleGoogleLogin = () => {
-      setIsLoading(true);
-      setTimeout(() => {
-        onLogin({
-          id: 'user-google-123',
-          email: 'demo@gmail.com',
-          name: 'Demo User',
-          plan: null,
-          credits: 0
-        });
-        setIsLoading(false);
-      }, 1500);
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        }
+      });
+
+      if (error) throw error;
+    } catch (err: any) {
+      setError(err.message || 'Google login failed');
+      setIsLoading(false);
+    }
   }
 
   return (
@@ -130,8 +190,14 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, lang, onToggleLang }) => {
              <p className="text-slate-400 text-sm mt-1">{isRegister ? "Create your professional account" : "Welcome back"}</p>
           </div>
 
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl">
+              <p className="text-sm text-red-600 font-medium">{error}</p>
+            </div>
+          )}
+
           <form onSubmit={handleAuth} className="space-y-5">
-            
+
             {isRegister && (
             <div className="space-y-1.5 animate-fade-in">
                <label className="text-xs font-bold text-slate-500 uppercase ml-1">{t.yourName}</label>
