@@ -122,7 +122,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
         {onToggleLang && (
           <button
             onClick={onToggleLang}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700"
+            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700"
           >
             <Globe size={16} />
             {lang === 'fi' ? 'EN' : 'FI'}
@@ -133,23 +133,23 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-900 px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Ruler className="text-emerald-500" size={24} />
+            <Ruler className="text-pink-500" size={24} />
             <h2 className="text-xl font-bold text-white uppercase tracking-wide">
               {t.phvTitle}
             </h2>
           </div>
           <button onClick={fillDemo} className="text-xs text-slate-400 hover:text-white underline">
-            {t.demoData}
+            {t.demoData || 'Demo'}
           </button>
         </div>
 
         <div className="p-6 space-y-6">
-          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-            <h3 className="font-bold text-emerald-900 mb-2 flex items-center gap-2">
+          <div className="bg-pink-50 border border-pink-200 rounded-lg p-4">
+            <h3 className="font-bold text-pink-900 mb-2 flex items-center gap-2">
               <TrendingUp size={18} />
               {t.phvSubtitle}
             </h3>
-            <p className="text-sm text-emerald-800">
+            <p className="text-sm text-pink-800">
               {t.phvDescription}
             </p>
           </div>
@@ -177,7 +177,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                 type="text"
                 value={athleteName}
                 onChange={(e) => setAthleteName(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                 placeholder={t.placeholderName}
               />
             </div>
@@ -193,7 +193,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                     value="male"
                     checked={gender === 'male'}
                     onChange={(e) => setGender(e.target.value as 'male' | 'female')}
-                    className="w-4 h-4 text-emerald-500 focus:ring-emerald-500"
+                    className="w-4 h-4 text-pink-500 focus:ring-pink-500"
                   />
                   <span className="font-medium text-slate-700">{t.phvMale}</span>
                 </label>
@@ -203,7 +203,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                     value="female"
                     checked={gender === 'female'}
                     onChange={(e) => setGender(e.target.value as 'male' | 'female')}
-                    className="w-4 h-4 text-emerald-500 focus:ring-emerald-500"
+                    className="w-4 h-4 text-pink-500 focus:ring-pink-500"
                   />
                   <span className="font-medium text-slate-700">{t.phvFemale}</span>
                 </label>
@@ -221,7 +221,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                 type="number"
                 value={ageYears}
                 onChange={(e) => setAgeYears(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                 placeholder="13"
                 min="6"
                 max="18"
@@ -237,7 +237,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                 type="number"
                 value={ageMonths}
                 onChange={(e) => setAgeMonths(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                 placeholder="0-11"
                 min="0"
                 max="11"
@@ -254,7 +254,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                 type="number"
                 value={height}
                 onChange={(e) => setHeight(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                 placeholder="165.5"
                 min="80"
                 max="220"
@@ -271,7 +271,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                 type="number"
                 value={sittingHeight}
                 onChange={(e) => setSittingHeight(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                 placeholder="85.0"
                 min="40"
                 max="120"
@@ -288,7 +288,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
                 type="number"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
+                className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                 placeholder="55.0"
                 min="15"
                 max="150"
@@ -309,7 +309,7 @@ const PhvTest: React.FC<PhvTestProps> = ({ lang, onBack, onShowReport, onToggleL
 
           <button
             onClick={handleCalculate}
-            className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-6 rounded-lg uppercase tracking-wide transition-colors shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+            className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-4 px-6 rounded-xl uppercase tracking-wide transition-colors shadow-lg shadow-pink-500/30 hover:shadow-xl flex items-center justify-center gap-2 transform active:scale-95"
           >
             <TrendingUp size={20} />
             {t.phvCalculate}

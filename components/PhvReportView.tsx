@@ -148,7 +148,7 @@ const PhvReportView: React.FC<PhvReportViewProps> = ({ lang, sessionData, onBack
         <div className="flex justify-between items-end border-b border-slate-100 pb-6 mb-6">
           <div>
             <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">
-              {lang === 'fi' ? 'KASVU' : 'GROWTH'} <span className="text-emerald-500">{lang === 'fi' ? 'KYPSYYS' : 'MATURITY'}</span>
+              {lang === 'fi' ? 'KYPSYYS' : 'MATURITY'} <span className="text-pink-500">{lang === 'fi' ? 'ANALYYSI' : 'ANALYSIS'}</span>
             </h1>
             <div className="text-slate-400 font-bold text-sm mt-1">
               {athleteName} | {new Date(sessionData.date).toLocaleDateString(lang === 'fi' ? 'fi-FI' : 'en-US')}
@@ -218,7 +218,7 @@ const PhvReportView: React.FC<PhvReportViewProps> = ({ lang, sessionData, onBack
           <ul className="space-y-2">
             {interpretation.recommendations.map((rec, idx) => (
               <li key={idx} className="flex items-start gap-3">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-2 flex-shrink-0"></div>
+                <div className="w-1.5 h-1.5 rounded-full bg-pink-500 mt-2 flex-shrink-0"></div>
                 <span className="text-sm text-slate-700 font-medium">{rec}</span>
               </li>
             ))}
