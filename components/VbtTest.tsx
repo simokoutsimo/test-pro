@@ -306,11 +306,16 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
       };
   }, []);
 
+  useEffect(() => {
+      window.scrollTo(0, 1);
+      setTimeout(() => window.scrollTo(0, 1), 100);
+  }, []);
+
   return (
-    <div className="fixed inset-0 bg-black text-white z-50 flex flex-col font-sans">
-        
+    <div className="fixed inset-0 bg-black text-white z-50 flex flex-col font-sans" style={{ height: '100dvh', minHeight: '100dvh' }}>
+
         {/* Fullscreen Video/Canvas Stack */}
-        <div className="absolute inset-0 z-0">
+        <div className="absolute inset-0 z-0" style={{ height: '100%' }}>
             <video 
                 ref={videoRef} 
                 autoPlay 

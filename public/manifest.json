@@ -1,0 +1,17 @@
+{
+  "name": "Koutsimo Test Pro",
+  "short_name": "Koutsimo",
+  "description": "Professional physiological testing environment",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

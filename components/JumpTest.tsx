@@ -114,6 +114,11 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
     }, [logicState, t]);
 
     useEffect(() => {
+        window.scrollTo(0, 1);
+        setTimeout(() => window.scrollTo(0, 1), 100);
+    }, []);
+
+    useEffect(() => {
         if (!isSystemActive) return;
 
         const ctx = canvasRef.current!.getContext('2d')!;
@@ -369,7 +374,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
 }
 
 const styles = {
-    container: { position: 'fixed' as const, top: 0, left: 0, width: '100vw', height: '100vh', background: '#000', fontFamily: 'system-ui, sans-serif', color: 'white', overflow: 'hidden', zIndex: 1000 } as React.CSSProperties,
+    container: { position: 'fixed' as const, top: 0, left: 0, width: '100vw', height: '100dvh', minHeight: '100dvh', background: '#000', fontFamily: 'system-ui, sans-serif', color: 'white', overflow: 'hidden', zIndex: 1000, touchAction: 'none' } as React.CSSProperties,
     video: { position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: 1, transform: 'scaleX(-1)' } as React.CSSProperties,
     canvas: { position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', zIndex: 2, transform: 'scaleX(-1)' } as React.CSSProperties,
     ui: { position: 'absolute', width: '100%', height: '100%', zIndex: 10, pointerEvents: 'none', display: 'flex', flexDirection: 'column', padding: '20px' } as React.CSSProperties,
