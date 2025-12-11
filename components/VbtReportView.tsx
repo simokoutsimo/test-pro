@@ -1,10 +1,11 @@
 
-import React from 'react';
-import { ArrowLeft, Printer, Activity, Zap, TrendingDown, Gauge } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowLeft, Printer, Activity, Zap, TrendingDown, Gauge, Save, Check } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Language } from '../types';
 import { translations } from '../utils/translations';
 import { VbtSessionData } from './VbtTest';
+import { supabase } from '../utils/supabase';
 
 interface VbtReportViewProps {
   lang: Language;
@@ -16,6 +17,57 @@ const VbtReportView: React.FC<VbtReportViewProps> = ({
   lang, sessionData, onBack
 }) => {
   const t = translations[lang];
+  const [athleteName, setAthleteName] = useState(sessionData.athleteName);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  const handleSaveReport = async () => {
+    if (!athleteName.trim()) {
+      alert('Please enter athlete name');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveSuccess(false);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (!user) {
+        alert('Please log in to save reports');
+        return;
+      }
+
+      const bestRepData = sessionData.reps.reduce((best, rep) => rep.peakVelocity > best.peakVelocity ? rep : best, sessionData.reps[0]);
+      const avgPeakVelocity = sessionData.reps.reduce((sum, r) => sum + r.peakVelocity, 0) / sessionData.reps.length;
+      const avgVelocity = sessionData.reps.reduce((sum, r) => sum + r.avgVelocity, 0) / sessionData.reps.length;
+
+      const { error } = await supabase
+        .from('athlete_reports')
+        .insert({
+          user_id: user.id,
+          athlete_name: athleteName.trim(),
+          test_type: 'VBT',
+          test_date: new Date(sessionData.date).toISOString(),
+          test_data: {
+            reps: sessionData.reps,
+            bestRep: bestRepData,
+            avgPeakVelocity,
+            avgVelocity
+          }
+        });
+
+      if (error) throw error;
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (error) {
+      console.error('Error saving report:', error);
+      alert('Failed to save report. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const bestRep = sessionData.reps.reduce((best, rep) => rep.peakVelocity > best.peakVelocity ? rep : best, sessionData.reps[0]);
   const avgPeakVelocity = sessionData.reps.reduce((sum, r) => sum + r.peakVelocity, 0) / sessionData.reps.length;
@@ -51,14 +103,43 @@ const VbtReportView: React.FC<VbtReportViewProps> = ({
   return (
     <div className="animate-fade-in space-y-6 pb-20">
        {/* HEADER */}
-       <div className="flex items-center justify-between no-print">
-           <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold text-sm">
-               <ArrowLeft size={16} /> {t.edit}
-           </button>
-           <div className="flex gap-2">
-               <button onClick={() => window.print()} className="bg-white border border-slate-200 p-2 rounded-lg text-slate-500 hover:text-slate-900">
-                   <Printer size={18} />
+       <div className="flex flex-col gap-4 no-print">
+           <div className="flex items-center justify-between">
+               <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 font-bold text-sm">
+                   <ArrowLeft size={16} /> {t.edit}
                </button>
+               <div className="flex gap-2">
+                   {saveSuccess && (
+                       <div className="flex items-center gap-2 text-green-600 font-bold text-sm">
+                           <Check size={18} />
+                           Saved
+                       </div>
+                   )}
+                   <button
+                       onClick={handleSaveReport}
+                       disabled={isSaving}
+                       className="bg-cyan-500 hover:bg-cyan-600 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                       <Save size={18} />
+                       {isSaving ? 'Saving...' : 'Save'}
+                   </button>
+                   <button onClick={() => window.print()} className="bg-white border border-slate-200 p-2 rounded-lg text-slate-500 hover:text-slate-900">
+                       <Printer size={18} />
+                   </button>
+               </div>
+           </div>
+
+           <div className="bg-white border border-slate-200 rounded-lg p-4">
+               <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
+                   Athlete Name
+               </label>
+               <input
+                   type="text"
+                   value={athleteName}
+                   onChange={(e) => setAthleteName(e.target.value)}
+                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 font-medium"
+                   placeholder="Enter athlete name"
+               />
            </div>
        </div>
 
@@ -67,7 +148,7 @@ const VbtReportView: React.FC<VbtReportViewProps> = ({
                <div>
                    <h1 className="text-3xl font-black text-slate-900 uppercase tracking-tighter">VBT <span className="text-cyan-500">ANALYSIS</span></h1>
                    <div className="text-slate-400 font-bold text-sm mt-1">
-                       {sessionData.athleteName} | {new Date(sessionData.date).toLocaleDateString(lang === 'fi' ? 'fi-FI' : 'en-US')}
+                       {athleteName} | {new Date(sessionData.date).toLocaleDateString(lang === 'fi' ? 'fi-FI' : 'en-US')}
                    </div>
                </div>
                <div className="text-right">

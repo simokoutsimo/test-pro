@@ -9,6 +9,7 @@ import VbtTest from './components/VbtTest';
 import JumpTest from './components/JumpTest';
 import JumpReportView from './components/JumpReportView';
 import VbtReportView from './components/VbtReportView';
+import AthleteReportsHistory from './components/AthleteReportsHistory';
 import { JumpSessionData } from './components/JumpTest';
 import { VbtSessionData } from './components/VbtTest';
 import { TestResult, Language, User, InputCacheData, TestType } from './types';
@@ -22,7 +23,7 @@ const App: React.FC = () => {
   const [isLoadingSession, setIsLoadingSession] = useState(true);
 
   // 2. View State within the App
-  const [appView, setAppView] = useState<'selection' | 'input' | 'report'>('selection');
+  const [appView, setAppView] = useState<'selection' | 'input' | 'report' | 'history'>('selection');
 
   // 3. Selected Test Type
   const [selectedTest, setSelectedTest] = useState<TestType | null>(null);
@@ -123,6 +124,10 @@ const App: React.FC = () => {
       setAppView('input');
   };
 
+  const handleShowHistory = () => {
+      setAppView('history');
+  };
+
   const handlePurchase = (plan: 'single' | 'pro' | 'coach') => {
       if (user) {
           const credits = plan === 'single' ? 1 : -1;
@@ -207,9 +212,14 @@ const App: React.FC = () => {
       return <AuthPage onLogin={handleLogin} lang={lang} onToggleLang={toggleLang} />;
   }
 
-  // 2. Logged In -> Selection Page (if no test selected)
+  // 2. Logged In -> Check View
+  if (appView === 'history') {
+      return <AthleteReportsHistory lang={lang} onBack={() => setAppView('selection')} />;
+  }
+
+  // 3. Logged In -> Selection Page (if no test selected)
   if (!selectedTest || appView === 'selection') {
-      return <TestSelectionPage onSelect={handleTestSelect} onLogout={handleLogout} lang={lang} />;
+      return <TestSelectionPage onSelect={handleTestSelect} onLogout={handleLogout} lang={lang} onShowHistory={handleShowHistory} />;
   }
 
   // 3. Test Selected -> Check Plan
@@ -228,7 +238,7 @@ const App: React.FC = () => {
       if (appView === 'report' && jumpSessionData) {
           return <JumpReportView lang={lang} sessionData={jumpSessionData} onBack={handleBack} />;
       }
-      return <JumpTest lang={lang} onShowReport={handleJumpReport} />;
+      return <JumpTest lang={lang} onShowReport={handleJumpReport} onBack={handleBack} />;
   }
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-slate-900 bg-slate-50">
@@ -268,7 +278,7 @@ const App: React.FC = () => {
                  credits={user.credits}
                />
            ) : selectedTest === 'mart' ? (
-               <MartTest lang={lang} />
+               <MartTest lang={lang} onBack={handleBack} />
            ) : (
                <div className="text-center p-12 bg-white rounded-2xl shadow-sm border border-slate-200">
                    <p className="text-slate-500 font-bold">{t.comingSoon}</p>

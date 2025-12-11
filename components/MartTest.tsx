@@ -1,12 +1,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Timer, Zap, Plus, User, Trash2, ClipboardList, Play, Minus } from 'lucide-react';
+import { Timer, Zap, Plus, User, Trash2, ClipboardList, Play, Minus, ArrowLeft } from 'lucide-react';
 import { Language } from '../types';
 import { translations } from '../utils/translations';
 import MartReportView from './MartReportView';
 
 interface MartTestProps {
   lang: Language;
+  onBack?: () => void;
 }
 
 export interface MartRow {
@@ -21,7 +22,7 @@ export interface MartRow {
 // Audio Context for Beeps
 const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
 
-const MartTest: React.FC<MartTestProps> = ({ lang }) => {
+const MartTest: React.FC<MartTestProps> = ({ lang, onBack }) => {
   const t = translations[lang];
   
   // View State
@@ -292,7 +293,16 @@ const MartTest: React.FC<MartTestProps> = ({ lang }) => {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in pb-20">
-      
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="flex items-center gap-2 text-slate-400 hover:text-slate-600 transition-colors font-bold"
+        >
+          <ArrowLeft size={18} />
+          Back
+        </button>
+      )}
+
       {/* HEADER & PROTOCOL */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="bg-slate-900 px-6 py-4 flex flex-wrap items-center justify-between gap-3">

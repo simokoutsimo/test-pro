@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Target, Play, Square, Footprints } from 'lucide-react';
+import { Target, Play, Square, Footprints, ArrowLeft } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
 import { trackByColor, calibrateColorFromClick, trackLowestPoint, ColorRange, COLOR_PRESETS, ROI } from '../utils/tracking';
@@ -8,6 +8,7 @@ import { trackByColor, calibrateColorFromClick, trackLowestPoint, ColorRange, CO
 interface JumpTestProps {
     lang?: Language;
     onShowReport?: (data: JumpSessionData) => void;
+    onBack?: () => void;
 }
 
 export interface JumpData {
@@ -25,7 +26,7 @@ export interface JumpSessionData {
     jumps: JumpData[];
 }
 
-const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
+const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport, onBack }) => {
     const t = translations[lang];
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -358,6 +359,31 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
 
             {phase === 'menu' && !isLoading && (
                 <div style={styles.overlay}>
+                    {onBack && (
+                        <button
+                            onClick={onBack}
+                            style={{
+                                position: 'absolute',
+                                top: '20px',
+                                left: '20px',
+                                background: 'rgba(0,0,0,0.6)',
+                                border: '1px solid rgba(255,255,255,0.2)',
+                                color: '#fff',
+                                padding: '10px 16px',
+                                borderRadius: '12px',
+                                fontSize: '14px',
+                                fontWeight: 'bold',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                backdropFilter: 'blur(10px)'
+                            }}
+                        >
+                            <ArrowLeft size={16} />
+                            Back
+                        </button>
+                    )}
                     <div style={styles.menuContainer}>
                         <Target size={64} style={{ margin: '0 auto 20px', color: '#22d3ee' }} />
                         <div style={styles.menuTitle}>Select Test</div>

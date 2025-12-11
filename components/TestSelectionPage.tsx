@@ -1,16 +1,17 @@
 
 import React from 'react';
-import { Activity, Timer, ArrowRight, TrendingUp, Dumbbell, Heart, LogOut, Ruler, Zap, Camera } from 'lucide-react';
+import { Activity, Timer, ArrowRight, TrendingUp, Dumbbell, Heart, LogOut, Ruler, Zap, Camera, ClipboardList } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language, TestType } from '../types';
 
 interface TestSelectionPageProps {
   onSelect: (type: TestType) => void;
   onLogout: () => void;
+  onShowHistory: () => void;
   lang: Language;
 }
 
-const TestSelectionPage: React.FC<TestSelectionPageProps> = ({ onSelect, onLogout, lang }) => {
+const TestSelectionPage: React.FC<TestSelectionPageProps> = ({ onSelect, onLogout, onShowHistory, lang }) => {
   const t = translations[lang];
 
   const TestCard = ({ type, title, desc, icon: Icon, color, comingSoon = false }: any) => (
@@ -41,10 +42,16 @@ const TestSelectionPage: React.FC<TestSelectionPageProps> = ({ onSelect, onLogou
         <div className="max-w-6xl mx-auto">
             <header className="flex justify-between items-center mb-12">
                 <h1 className="text-2xl font-black text-slate-900 uppercase">Koutsimo <span className="text-pink-500">Test Pro</span></h1>
-                <button onClick={onLogout} className="text-sm font-bold text-slate-500 hover:text-red-500 flex items-center gap-2">
-                    <LogOut size={16} />
-                    {t.logout}
-                </button>
+                <div className="flex items-center gap-4">
+                    <button onClick={onShowHistory} className="text-sm font-bold text-slate-500 hover:text-pink-500 flex items-center gap-2 transition-colors">
+                        <ClipboardList size={16} />
+                        Reports
+                    </button>
+                    <button onClick={onLogout} className="text-sm font-bold text-slate-500 hover:text-red-500 flex items-center gap-2 transition-colors">
+                        <LogOut size={16} />
+                        {t.logout}
+                    </button>
+                </div>
             </header>
             
             <div className="text-center max-w-2xl mx-auto mb-16">
