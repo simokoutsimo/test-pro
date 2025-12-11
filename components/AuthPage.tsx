@@ -145,17 +145,18 @@ const AuthPage: React.FC<AuthPageProps> = ({ onLogin, lang, onToggleLang }) => {
            {/* PRODUCT DEMO VIDEO CONTAINER */}
            <div className="w-full relative rounded-2xl overflow-hidden shadow-2xl shadow-pink-900/30 border border-slate-700 bg-slate-800 aspect-video group">
                <div className="absolute inset-0 bg-slate-800 animate-pulse" />
-               <video 
-                 autoPlay 
-                 loop 
-                 muted 
-                 playsInline 
+               <video
+                 autoPlay
+                 loop
+                 muted
+                 playsInline
                  className="relative z-10 w-full h-full object-cover opacity-100"
-                 src="https://assets.mixkit.co/videos/preview/mixkit-athlete-running-on-a-treadmill-in-a-gym-44383-large.mp4"
+                 poster="https://images.pexels.com/photos/866023/pexels-photo-866023.jpeg?auto=compress&cs=tinysrgb&w=1920"
                >
+                  <source src="https://videos.pexels.com/video-files/4753992/4753992-uhd_2560_1440_30fps.mp4" type="video/mp4" />
                   Your browser does not support the video tag.
                </video>
-               
+
                {/* Overlay gradient */}
                <div className="absolute inset-0 border-[1px] border-white/10 rounded-2xl pointer-events-none z-20 shadow-[inset_0_0_40px_rgba(0,0,0,0.5)]"></div>
            </div>
