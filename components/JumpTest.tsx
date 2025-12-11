@@ -23,8 +23,10 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
     const [uiState, setUiState] = useState({
         height: "0.0 cm",
         flight: "0 ms",
+        contact: "0 ms",
         angle: "--°",
-        fps: "Phys: 0 / AI: 0"
+        fps: "Phys: 0 / AI: 0",
+        jumps: 0
     });
     const [mode, setMode] = useState('cmj');
     const [isSystemActive, setSystemActive] = useState(false);
@@ -37,8 +39,12 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
         baseLineY: 0,
         phase: 'GROUND', // GROUND, FLIGHT
         t_takeoff: 0,
+        t_landing: 0,
         jumpHeight: 0,
         flightTime: 0,
+        contactTime: 0,
+        jumpCount: 0,
+        lastLandingTime: 0,
         // AI
         poseLandmarks: null,
         kneeAngle: 0,
@@ -50,6 +56,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
         // Loop control
         animationFrameId: 0,
         pose: null as any,
+        autoStopTimeout: null as any,
     }).current;
 
     const CONFIG = { tapeBrightness: 220, g: 9.81 };
@@ -189,8 +196,10 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
             setUiState({
                 height: logicState.jumpHeight.toFixed(1) + " cm",
                 flight: logicState.flightTime.toFixed(0) + " ms",
+                contact: logicState.contactTime.toFixed(0) + " ms",
                 angle: logicState.kneeAngle + "°",
-                fps: `${t.jumpPhys}: ${physFps} / ${t.jumpAI}: ${aiFps}`
+                fps: `${t.jumpPhys}: ${physFps} / ${t.jumpAI}: ${aiFps}`,
+                jumps: logicState.jumpCount
             });
 
             logicState.lastFpsCheck = now;
@@ -204,12 +213,15 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
         return () => {
             cancelAnimationFrame(logicState.animationFrameId);
             clearInterval(uiInterval);
+            if (logicState.autoStopTimeout) {
+                clearTimeout(logicState.autoStopTimeout);
+            }
             if(videoRef.current?.srcObject) {
                 (videoRef.current.srcObject as MediaStream).getTracks().forEach(track => track.stop());
             }
         };
 
-    }, [isSystemActive, logicState]);
+    }, [isSystemActive, logicState, t]);
 
     const findTape = (ctx: CanvasRenderingContext2D, roi: any) => {
         const imgData = ctx.getImageData(roi.x, roi.y, roi.w, roi.h);
@@ -227,21 +239,57 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
     };
 
     const updatePhysics = (y: number, t: number) => {
+        const threshold = 0.025; // 2.5% toleranssi paremmalle tunnistukselle
+
         if (logicState.phase === 'GROUND') {
-            if (y < logicState.baseLineY - 0.03) { // 3% toleranssi
-                 logicState.phase = 'FLIGHT';
-                 logicState.t_takeoff = t;
+            if (y < logicState.baseLineY - threshold) {
+                logicState.phase = 'FLIGHT';
+                logicState.t_takeoff = t;
+
+                // Laske kontaktiaika
+                if (logicState.t_landing > 0) {
+                    const contactMs = (t - logicState.t_landing) * 1000;
+                    if (contactMs > 50 && contactMs < 3000) {
+                        logicState.contactTime = contactMs;
+                    }
+                }
+
+                // Tyhjennä autostop jos oli asetettu
+                if (logicState.autoStopTimeout) {
+                    clearTimeout(logicState.autoStopTimeout);
+                    logicState.autoStopTimeout = null;
+                }
             }
         } else if (logicState.phase === 'FLIGHT') {
-            if (y > logicState.baseLineY - 0.03) {
+            if (y > logicState.baseLineY - threshold) {
                 logicState.phase = 'GROUND';
+                logicState.t_landing = t;
                 const flightTimeMs = (t - logicState.t_takeoff) * 1000;
-                if (flightTimeMs > 100 && flightTimeMs < 1500) { // Suodatus
+
+                if (flightTimeMs > 100 && flightTimeMs < 1500) {
                     logicState.flightTime = flightTimeMs;
                     const t_sec = flightTimeMs / 1000;
                     logicState.jumpHeight = (CONFIG.g * Math.pow(t_sec, 2) / 8) * 100;
+                    logicState.jumpCount++;
+                    logicState.lastLandingTime = t;
+
+                    // Aseta autostop 3s kuluttua
+                    if (logicState.autoStopTimeout) {
+                        clearTimeout(logicState.autoStopTimeout);
+                    }
+                    logicState.autoStopTimeout = setTimeout(() => {
+                        stopSystem();
+                    }, 3000);
                 }
             }
+        }
+    };
+
+    const stopSystem = () => {
+        setSystemActive(false);
+        if (logicState.autoStopTimeout) {
+            clearTimeout(logicState.autoStopTimeout);
+            logicState.autoStopTimeout = null;
         }
     };
     
@@ -262,16 +310,24 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
             )}
 
             <div style={styles.ui}>
-                <div style={{...styles.hudPanel, width: '180px'}}>
+                <div style={{...styles.hudPanel, width: '200px'}}>
                     <div style={styles.label}>{t.jumpHeight}</div>
                     <div style={{...styles.bigVal, ...styles.highlight}}>{uiState.height}</div>
                     <div style={{...styles.label, marginTop: '5px'}}>{t.jumpFlightTime}</div>
                     <div style={styles.bigVal}>{uiState.flight}</div>
+                    <div style={{...styles.label, marginTop: '5px'}}>{t.jumpContactTime}</div>
+                    <div style={styles.bigVal}>{uiState.contact}</div>
+
+                    <div style={{...styles.label, marginTop: '10px', fontSize: '12px'}}>{t.jumpJumps}: {uiState.jumps}</div>
 
                     <div style={styles.switchContainer}>
                         <button style={mode === 'cmj' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('cmj')}>{t.jumpCMJ}</button>
                         <button style={mode === 'rsi' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('rsi')}>{t.jumpRSI}</button>
                     </div>
+
+                    {isSystemActive && (
+                        <button onClick={stopSystem} style={{...styles.stopBtn, marginTop: '10px'}}>{t.jumpStop}</button>
+                    )}
                 </div>
                 <div style={{...styles.hudPanel, ...styles.kneeIndicator}}>
                     <div style={styles.label}>{t.jumpKneeAngle}</div>
@@ -299,6 +355,7 @@ const styles = {
     btnToggle: { background: '#333', color: 'white', border: '1px solid #555', padding: '5px 10px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', pointerEvents: 'auto' } as React.CSSProperties,
     btnActive: { background: '#007AFF', borderColor: '#007AFF' } as React.CSSProperties,
     startBtn: { pointerEvents: 'auto', padding: '20px 60px', borderRadius: '40px', border: 'none', background: '#00f', color: 'white', fontSize: '20px', fontWeight: 'bold', boxShadow: '0 0 30px rgba(0,0,255,0.5)', zIndex: 20, cursor: 'pointer' } as React.CSSProperties,
+    stopBtn: { pointerEvents: 'auto', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #f00', background: 'rgba(255,0,0,0.2)', color: '#f00', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' } as React.CSSProperties,
     loader: { fontSize: '14px', color: '#aaa' } as React.CSSProperties
 };
 
