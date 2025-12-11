@@ -1,9 +1,9 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Target, Play, Square } from 'lucide-react';
+import { Target, Play, Square, Footprints } from 'lucide-react';
 import { translations } from '../utils/translations';
 import { Language } from '../types';
-import { trackByColor, calibrateColorFromClick, ColorRange, COLOR_PRESETS, ROI } from '../utils/tracking';
+import { trackByColor, calibrateColorFromClick, trackLowestPoint, ColorRange, COLOR_PRESETS, ROI } from '../utils/tracking';
 
 interface JumpTestProps {
     lang?: Language;
@@ -34,8 +34,11 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
     const [mode, setMode] = useState<'cmj' | 'rsi'>('cmj');
     const [isSystemActive, setSystemActive] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [trackingMethod, setTrackingMethod] = useState<'motion' | 'color'>('motion');
     const [colorRange, setColorRange] = useState<ColorRange>(COLOR_PRESETS.green);
     const [trackingConfidence, setTrackingConfidence] = useState(0);
+
+    const previousFrameRef = useRef<ImageData | null>(null);
 
     const [uiState, setUiState] = useState({
         height: "0.0",
@@ -119,7 +122,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
     }, [logicState, t]);
 
     const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-        if (phase !== 'calibrate' || !canvasRef.current) return;
+        if (phase !== 'calibrate' || trackingMethod !== 'color' || !canvasRef.current) return;
 
         const canvas = canvasRef.current;
         const rect = canvas.getBoundingClientRect();
@@ -143,6 +146,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
         logicState.phase = 'BASELINE';
         logicState.baselineFrames = 0;
         logicState.baselineSum = 0;
+        previousFrameRef.current = null;
     };
 
     useEffect(() => {
@@ -169,7 +173,15 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
                 h: canvasRef.current!.height
             };
 
-            const trackPoint = trackByColor(ctx, roi, colorRange, 50);
+            let trackPoint = null;
+
+            if (trackingMethod === 'motion') {
+                trackPoint = trackLowestPoint(ctx, roi, previousFrameRef.current, 20);
+                const currentImageData = ctx.getImageData(0, 0, canvasRef.current!.width, canvasRef.current!.height);
+                previousFrameRef.current = currentImageData;
+            } else {
+                trackPoint = trackByColor(ctx, roi, colorRange, 50);
+            }
 
             if (trackPoint && trackPoint.confidence > 0.3) {
                 setTrackingConfidence(trackPoint.confidence);
@@ -248,7 +260,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
                 cancelAnimationFrame(logicState.animationFrameId);
             }
         };
-    }, [isSystemActive, colorRange, mode]);
+    }, [isSystemActive, colorRange, mode, trackingMethod]);
 
     const updatePhysics = (y: number, t: number) => {
         const config = TEST_CONFIG[mode];
@@ -340,7 +352,7 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
             <video ref={videoRef} style={styles.video} autoPlay playsInline muted />
             <canvas
                 ref={canvasRef}
-                style={styles.canvas}
+                style={{ ...styles.canvas, cursor: phase === 'calibrate' && trackingMethod === 'color' ? 'crosshair' : 'default' }}
                 onClick={handleCanvasClick}
             />
 
@@ -375,31 +387,63 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi', onShowReport }) => {
 
             {phase === 'calibrate' && (
                 <div style={styles.uiOverlay}>
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <div style={{ ...styles.infoPanel, textAlign: 'center' }}>
-                            <Target size={32} style={{ margin: '0 auto 12px', color: '#22d3ee' }} />
-                            <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#22d3ee', marginBottom: '8px' }}>
-                                Tap bright marker on bar
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+                        <div style={{ ...styles.infoPanel, textAlign: 'center', maxWidth: '320px' }}>
+                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#22d3ee', marginBottom: '16px' }}>
+                                Choose tracking method
                             </div>
-                            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                                Use green, yellow, or white tape
-                            </div>
-                        </div>
-                    </div>
 
-                    <div style={{ padding: '16px', display: 'flex', gap: '8px', justifyContent: 'center', background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)' }}>
-                        {Object.entries(COLOR_PRESETS).map(([name, preset]) => (
                             <button
-                                key={name}
                                 onClick={() => {
-                                    setColorRange(preset);
+                                    setTrackingMethod('motion');
                                     startTracking();
                                 }}
-                                style={{ ...styles.presetBtn }}
+                                style={{ ...styles.trackMethodBtn, marginBottom: '12px', background: trackingMethod === 'motion' ? 'rgba(34, 211, 238, 0.2)' : 'rgba(0,0,0,0.6)', border: trackingMethod === 'motion' ? '2px solid #22d3ee' : '1px solid rgba(255,255,255,0.2)' }}
                             >
-                                {name}
+                                <Footprints size={24} style={{ marginRight: '12px' }} />
+                                <div style={{ textAlign: 'left' }}>
+                                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>Track Foot</div>
+                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Motion-based (recommended)</div>
+                                </div>
                             </button>
-                        ))}
+
+                            <div style={{ fontSize: '12px', color: '#64748b', margin: '8px 0' }}>OR</div>
+
+                            <button
+                                onClick={() => {
+                                    setTrackingMethod('color');
+                                }}
+                                style={{ ...styles.trackMethodBtn, background: trackingMethod === 'color' ? 'rgba(34, 211, 238, 0.2)' : 'rgba(0,0,0,0.6)', border: trackingMethod === 'color' ? '2px solid #22d3ee' : '1px solid rgba(255,255,255,0.2)' }}
+                            >
+                                <Target size={24} style={{ marginRight: '12px' }} />
+                                <div style={{ textAlign: 'left' }}>
+                                    <div style={{ fontSize: '14px', fontWeight: 'bold' }}>Track Tape</div>
+                                    <div style={{ fontSize: '11px', color: '#94a3b8' }}>Tap marker after selecting</div>
+                                </div>
+                            </button>
+                        </div>
+
+                        {trackingMethod === 'color' && (
+                            <div style={{ ...styles.infoPanel, padding: '12px 16px' }}>
+                                <div style={{ fontSize: '12px', color: '#22d3ee', marginBottom: '8px', fontWeight: 'bold' }}>
+                                    Tap bright marker on screen
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                                    {Object.entries(COLOR_PRESETS).map(([name, preset]) => (
+                                        <button
+                                            key={name}
+                                            onClick={() => {
+                                                setColorRange(preset);
+                                                startTracking();
+                                            }}
+                                            style={{ ...styles.presetBtn }}
+                                        >
+                                            {name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -480,7 +524,8 @@ const styles = {
     statUnit: { fontSize: '12px', color: '#fbbf24', marginTop: '2px', fontWeight: 'bold' } as React.CSSProperties,
     stopBtn: { padding: '12px 24px', background: 'rgba(239, 68, 68, 0.2)', border: '2px solid #ef4444', borderRadius: '12px', color: '#ef4444', fontSize: '14px', fontWeight: 'bold', textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.2s', pointerEvents: 'auto' } as React.CSSProperties,
     presetBtn: { padding: '8px 16px', background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '8px', color: '#fff', fontSize: '12px', fontWeight: 'bold', textTransform: 'capitalize', cursor: 'pointer', pointerEvents: 'auto' } as React.CSSProperties,
-    infoPanel: { padding: '24px', background: 'rgba(0,0,0,0.8)', borderRadius: '16px', border: '1px solid rgba(34, 211, 238, 0.3)', backdropFilter: 'blur(12px)' } as React.CSSProperties
+    infoPanel: { padding: '24px', background: 'rgba(0,0,0,0.8)', borderRadius: '16px', border: '1px solid rgba(34, 211, 238, 0.3)', backdropFilter: 'blur(12px)' } as React.CSSProperties,
+    trackMethodBtn: { display: 'flex', alignItems: 'center', justifyContent: 'flex-start', width: '100%', padding: '14px 18px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', pointerEvents: 'auto' } as React.CSSProperties
 };
 
 export default JumpTest;

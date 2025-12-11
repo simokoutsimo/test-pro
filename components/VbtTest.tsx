@@ -42,7 +42,7 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
   const [repCount, setRepCount] = useState(0);
   const [status, setStatus] = useState(t.vbtStart);
   const [trackingMode] = useState<'color' | 'brightness'>('color');
-  const [colorRange, setColorRange] = useState<ColorRange>(COLOR_PRESETS.yellow);
+  const [colorRange, setColorRange] = useState<ColorRange>(COLOR_PRESETS.white);
   const [trackingConfidence, setTrackingConfidence] = useState(0);
 
   const stateRef = useRef({
@@ -365,7 +365,7 @@ const VbtTest: React.FC<VbtTestProps> = ({ lang, onBack, onShowReport }) => {
                         <div className="bg-black/70 backdrop-blur-md px-6 py-4 rounded-2xl border border-cyan-400/30 text-center">
                             <Target size={32} className="mx-auto mb-2 text-cyan-400 animate-pulse" />
                             <p className="text-sm font-bold text-cyan-400">Tap bright marker/tape</p>
-                            <p className="text-xs text-slate-400 mt-1">Yellow, white, or bright color</p>
+                            <p className="text-xs text-slate-400 mt-1">White, green, or orange tape</p>
                         </div>
                     </div>
 

@@ -21,12 +21,9 @@ export interface ColorRange {
 }
 
 export const COLOR_PRESETS = {
-  yellow: { hMin: 20, hMax: 35, sMin: 100, sMax: 255, vMin: 100, vMax: 255 },
-  green: { hMin: 40, hMax: 80, sMin: 80, sMax: 255, vMin: 80, vMax: 255 },
-  cyan: { hMin: 80, hMax: 100, sMin: 100, sMax: 255, vMin: 100, vMax: 255 },
-  orange: { hMin: 5, hMax: 20, sMin: 100, sMax: 255, vMin: 100, vMax: 255 },
-  pink: { hMin: 140, hMax: 170, sMin: 80, sMax: 255, vMin: 100, vMax: 255 },
-  white: { hMin: 0, hMax: 180, sMin: 0, sMax: 30, vMin: 200, vMax: 255 }
+  white: { hMin: 0, hMax: 180, sMin: 0, sMax: 40, vMin: 180, vMax: 255 },
+  green: { hMin: 35, hMax: 85, sMin: 60, sMax: 255, vMin: 60, vMax: 255 },
+  orange: { hMin: 5, hMax: 25, sMin: 100, sMax: 255, vMin: 100, vMax: 255 }
 };
 
 function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
@@ -318,5 +315,143 @@ export function calibrateColorFromClick(
     sMax: Math.min(255, avgS + sTolerance),
     vMin: Math.max(0, avgV - vTolerance),
     vMax: Math.min(255, avgV + vTolerance)
+  };
+}
+
+export function trackMotion(
+  ctx: CanvasRenderingContext2D,
+  roi: ROI,
+  previousFrame: ImageData | null
+): TrackingPoint | null {
+  const currentFrame = ctx.getImageData(
+    Math.floor(roi.x),
+    Math.floor(roi.y),
+    Math.floor(roi.w),
+    Math.floor(roi.h)
+  );
+
+  if (!previousFrame ||
+      previousFrame.width !== currentFrame.width ||
+      previousFrame.height !== currentFrame.height) {
+    return null;
+  }
+
+  const curr = currentFrame.data;
+  const prev = previousFrame.data;
+  const width = currentFrame.width;
+
+  let totalX = 0;
+  let totalY = 0;
+  let motionCount = 0;
+  const threshold = 25;
+
+  for (let i = 0; i < curr.length; i += 16) {
+    const rDiff = Math.abs(curr[i] - prev[i]);
+    const gDiff = Math.abs(curr[i + 1] - prev[i + 1]);
+    const bDiff = Math.abs(curr[i + 2] - prev[i + 2]);
+    const diff = (rDiff + gDiff + bDiff) / 3;
+
+    if (diff > threshold) {
+      const pixelIndex = i / 4;
+      const x = pixelIndex % width;
+      const y = Math.floor(pixelIndex / width);
+
+      totalX += x;
+      totalY += y;
+      motionCount++;
+    }
+  }
+
+  if (motionCount < 30) {
+    return null;
+  }
+
+  const centroidX = roi.x + (totalX / motionCount);
+  const centroidY = roi.y + (totalY / motionCount);
+
+  const confidence = Math.min(motionCount / 300, 1.0);
+
+  return {
+    x: centroidX / ctx.canvas.width,
+    y: centroidY / ctx.canvas.height,
+    confidence
+  };
+}
+
+export function trackLowestPoint(
+  ctx: CanvasRenderingContext2D,
+  roi: ROI,
+  previousFrame: ImageData | null,
+  motionThreshold: number = 20
+): TrackingPoint | null {
+  const currentFrame = ctx.getImageData(
+    Math.floor(roi.x),
+    Math.floor(roi.y),
+    Math.floor(roi.w),
+    Math.floor(roi.h)
+  );
+
+  if (!previousFrame ||
+      previousFrame.width !== currentFrame.width ||
+      previousFrame.height !== currentFrame.height) {
+    return null;
+  }
+
+  const curr = currentFrame.data;
+  const prev = previousFrame.data;
+  const width = currentFrame.width;
+  const height = currentFrame.height;
+
+  const motionMap: boolean[] = new Array(width * height).fill(false);
+
+  for (let i = 0; i < curr.length; i += 8) {
+    const rDiff = Math.abs(curr[i] - prev[i]);
+    const gDiff = Math.abs(curr[i + 1] - prev[i + 1]);
+    const bDiff = Math.abs(curr[i + 2] - prev[i + 2]);
+    const diff = (rDiff + gDiff + bDiff) / 3;
+
+    if (diff > motionThreshold) {
+      const pixelIndex = i / 4;
+      motionMap[pixelIndex] = true;
+    }
+  }
+
+  let lowestY = -1;
+  let lowestYCount = 0;
+  let lowestYX = 0;
+
+  for (let y = height - 1; y >= 0; y--) {
+    let rowMotionCount = 0;
+    let rowX = 0;
+
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (motionMap[idx]) {
+        rowMotionCount++;
+        rowX += x;
+      }
+    }
+
+    if (rowMotionCount > 10) {
+      lowestY = y;
+      lowestYCount = rowMotionCount;
+      lowestYX = rowX / rowMotionCount;
+      break;
+    }
+  }
+
+  if (lowestY === -1) {
+    return null;
+  }
+
+  const centroidX = roi.x + lowestYX;
+  const centroidY = roi.y + lowestY;
+
+  const confidence = Math.min(lowestYCount / 100, 1.0);
+
+  return {
+    x: centroidX / ctx.canvas.width,
+    y: centroidY / ctx.canvas.height,
+    confidence
   };
 }
