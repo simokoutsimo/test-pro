@@ -119,7 +119,7 @@ const JumpReportView: React.FC<JumpReportViewProps> = ({
                    {onToggleLang && (
                        <button
                            onClick={onToggleLang}
-                           className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700"
+                           className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors text-sm font-bold text-slate-700"
                        >
                            <Globe size={16} />
                            {lang === 'fi' ? 'EN' : 'FI'}
@@ -134,18 +134,18 @@ const JumpReportView: React.FC<JumpReportViewProps> = ({
                    <button
                        onClick={handleSaveReport}
                        disabled={isSaving}
-                       className="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-lg font-bold text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                       className="bg-pink-500 hover:bg-pink-600 text-white px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm hover:shadow-md"
                    >
                        <Save size={18} />
                        {isSaving ? 'Saving...' : 'Save'}
                    </button>
-                   <button onClick={() => window.print()} className="bg-white border border-slate-200 p-2 rounded-lg text-slate-500 hover:text-slate-900">
+                   <button onClick={() => window.print()} className="bg-white border border-slate-200 p-2 rounded-xl text-slate-500 hover:text-slate-900 transition-colors">
                        <Printer size={18} />
                    </button>
                </div>
            </div>
 
-           <div className="bg-white border border-slate-200 rounded-lg p-4">
+           <div className="bg-white border border-slate-200 rounded-xl p-4">
                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">
                    Athlete Name
                </label>
@@ -153,7 +153,7 @@ const JumpReportView: React.FC<JumpReportViewProps> = ({
                    type="text"
                    value={athleteName}
                    onChange={(e) => setAthleteName(e.target.value)}
-                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
+                   className="w-full px-4 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 font-medium"
                    placeholder="Enter athlete name"
                />
            </div>
