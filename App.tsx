@@ -6,6 +6,7 @@ import PricingPage from './components/PricingPage';
 import TestSelectionPage from './components/TestSelectionPage';
 import MartTest from './components/MartTest';
 import VbtTest from './components/VbtTest';
+import JumpTest from './components/JumpTest';
 import { TestResult, Language, User, InputCacheData, TestType } from './types';
 import { translations } from './utils/translations';
 import { LogOut, ArrowLeft } from 'lucide-react';
@@ -202,6 +203,9 @@ const App: React.FC = () => {
   // 4. Test Selected & Plan OK -> Input/Report
   if (selectedTest === 'vbt') {
       return <VbtTest lang={lang} onBack={handleBack} />;
+  }
+  if (selectedTest === 'jump') {
+      return <JumpTest lang={lang} />;
   }
   return (
     <div className="min-h-screen p-4 md:p-8 font-sans text-slate-900 bg-slate-50">

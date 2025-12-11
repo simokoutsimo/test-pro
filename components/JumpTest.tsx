@@ -1,5 +1,7 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { translations } from '../utils/translations';
+import { Language } from '../types';
 
 // Nämä kirjastot ladataan globaalisti <script>-tageilla, joten tarvitsemme tyyppimääritelmät.
 declare const Pose: any;
@@ -7,7 +9,12 @@ declare const POSE_CONNECTIONS: any;
 declare const drawConnectors: any;
 declare const drawLandmarks: any;
 
-const JumpTest: React.FC = () => {
+interface JumpTestProps {
+    lang?: Language;
+}
+
+const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
+    const t = translations[lang];
     // 1. REFs SUORAA DOM-MANIPULAATIOTA VARTEN
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -55,6 +62,20 @@ const JumpTest: React.FC = () => {
         return angle;
     };
 
+    // --- AI-TULOSTEN KÄSITTELY ---
+    const onPoseResults = (results: any) => {
+        logicState.poseLandmarks = results.poseLandmarks;
+        logicState.aiProcessing = false;
+        logicState.framesAI++;
+        if (results.poseLandmarks) {
+            const l = results.poseLandmarks;
+            const p1 = l[24], p2 = l[26], p3 = l[28];
+            if (p1.visibility > 0.5 && p2.visibility > 0.5 && p3.visibility > 0.5) {
+               logicState.kneeAngle = Math.round(calculateAngle(p1, p2, p3));
+            }
+        }
+    };
+
     // --- KÄYNNISTYS & ALUSTUS ---
     const startSystem = useCallback(async () => {
         setIsLoading(true);
@@ -63,9 +84,9 @@ const JumpTest: React.FC = () => {
         await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js');
         await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js');
         const poseScript = await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js');
-        
+
         if(!poseScript) {
-            alert("Tekoälymallin lataus epäonnistui.");
+            alert(t.jumpLoading.replace('...', ' epäonnistui'));
             setIsLoading(false);
             return;
         }
@@ -95,10 +116,10 @@ const JumpTest: React.FC = () => {
                 };
             }
         } catch (err: any) {
-            alert("Kameravirhe: " + err.message);
+            alert(t.jumpCameraError + ": " + err.message);
             setIsLoading(false);
         }
-    }, [logicState]);
+    }, [logicState, t]);
     
     const loadScript = (src: string) => {
         return new Promise((resolve) => {
@@ -110,20 +131,6 @@ const JumpTest: React.FC = () => {
             document.body.appendChild(script);
         });
     }
-
-    // --- AI-TULOSTEN KÄSITTELY ---
-    const onPoseResults = (results: any) => {
-        logicState.poseLandmarks = results.poseLandmarks;
-        logicState.aiProcessing = false;
-        logicState.framesAI++;
-        if (results.poseLandmarks) {
-            const l = results.poseLandmarks;
-            const p1 = l[24], p2 = l[26], p3 = l[28]; // Oikea polvi
-            if (p1.visibility > 0.5 && p2.visibility > 0.5 && p3.visibility > 0.5) {
-               logicState.kneeAngle = Math.round(calculateAngle(p1, p2, p3));
-            }
-        }
-    };
 
     // --- PÄÄLOOPPI & FYSIIKKA (useEffect) ---
     useEffect(() => {
@@ -183,7 +190,7 @@ const JumpTest: React.FC = () => {
                 height: logicState.jumpHeight.toFixed(1) + " cm",
                 flight: logicState.flightTime.toFixed(0) + " ms",
                 angle: logicState.kneeAngle + "°",
-                fps: `Phys: ${physFps} / AI: ${aiFps}`
+                fps: `${t.jumpPhys}: ${physFps} / ${t.jumpAI}: ${aiFps}`
             });
 
             logicState.lastFpsCheck = now;
@@ -238,34 +245,36 @@ const JumpTest: React.FC = () => {
         }
     };
     
+    const containerStyle = {...styles.container, position: 'fixed' as const, top: 0, left: 0, zIndex: 1000};
+
     return (
-        <div style={{...styles.container, position: 'fixed', top: 0, left: 0, zIndex: 1000}}>
+        <div style={containerStyle}>
             <video ref={videoRef} style={styles.video} autoPlay playsInline muted />
             <canvas ref={canvasRef} style={styles.canvas} />
 
             {!isSystemActive && (
                 <div style={styles.overlay}>
-                    {!isLoading ? 
-                        <button onClick={startSystem} style={styles.startBtn}>START HYBRID SYSTEM</button> :
-                        <div style={styles.loader}>Ladataan tekoälymalleja...</div>
+                    {!isLoading ?
+                        <button onClick={startSystem} style={styles.startBtn}>{t.jumpStart}</button> :
+                        <div style={styles.loader}>{t.jumpLoading}</div>
                     }
                 </div>
             )}
 
             <div style={styles.ui}>
                 <div style={{...styles.hudPanel, width: '180px'}}>
-                    <div style={styles.label}>JUMP HEIGHT</div>
+                    <div style={styles.label}>{t.jumpHeight}</div>
                     <div style={{...styles.bigVal, ...styles.highlight}}>{uiState.height}</div>
-                    <div style={{...styles.label, marginTop: '5px'}}>FLIGHT TIME</div>
+                    <div style={{...styles.label, marginTop: '5px'}}>{t.jumpFlightTime}</div>
                     <div style={styles.bigVal}>{uiState.flight}</div>
-                    
+
                     <div style={styles.switchContainer}>
-                        <button style={mode === 'cmj' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('cmj')}>CMJ</button>
-                        <button style={mode === 'rsi' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('rsi')}>RSI</button>
+                        <button style={mode === 'cmj' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('cmj')}>{t.jumpCMJ}</button>
+                        <button style={mode === 'rsi' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('rsi')}>{t.jumpRSI}</button>
                     </div>
                 </div>
                 <div style={{...styles.hudPanel, ...styles.kneeIndicator}}>
-                    <div style={styles.label}>KNEE ANGLE</div>
+                    <div style={styles.label}>{t.jumpKneeAngle}</div>
                     <div style={styles.bigVal}>{uiState.angle}</div>
                     <div style={styles.label}>{uiState.fps}</div>
                 </div>
