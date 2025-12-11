@@ -59,7 +59,26 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
         autoStopTimeout: null as any,
     }).current;
 
-    const CONFIG = { tapeBrightness: 220, g: 9.81 };
+    // Test-specific configurations
+    const TEST_CONFIG = {
+        cmj: {
+            tapeBrightness: 220,
+            threshold: 0.025,
+            minFlightTime: 100,
+            maxFlightTime: 1500,
+            autoStopDelay: 3000
+        },
+        rsi: {
+            tapeBrightness: 220,
+            threshold: 0.020, // Tarkempi tunnistus RSI:lle
+            minFlightTime: 80,
+            maxFlightTime: 1000,
+            autoStopDelay: 3000,
+            minContactTime: 50,
+            maxContactTime: 3000
+        }
+    };
+    const g = 9.81;
 
     // --- APUFUNKTIOT (Pysyvät samoina) ---
     const calculateAngle = (a: any, b: any, c: any) => {
@@ -224,14 +243,15 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
     }, [isSystemActive, logicState, t]);
 
     const findTape = (ctx: CanvasRenderingContext2D, roi: any) => {
+        const config = TEST_CONFIG[mode as 'cmj' | 'rsi'];
         const imgData = ctx.getImageData(roi.x, roi.y, roi.w, roi.h);
         const data = imgData.data;
         let bestY = -1, bestG = 0;
-        
-        for (let i = 0; i < data.length; i += 8) { // Hypitään pikseleitä
-            const r = data[i], g = data[i+1], b = data[i+2];
-            if (g > CONFIG.tapeBrightness && g > r + 20 && g > b + 20 && g > bestG) {
-                bestG = g;
+
+        for (let i = 0; i < data.length; i += 8) {
+            const r = data[i], gVal = data[i+1], b = data[i+2];
+            if (gVal > config.tapeBrightness && gVal > r + 20 && gVal > b + 20 && gVal > bestG) {
+                bestG = gVal;
                 bestY = Math.floor((i / 4) / roi.w);
             }
         }
@@ -239,17 +259,18 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
     };
 
     const updatePhysics = (y: number, t: number) => {
-        const threshold = 0.025; // 2.5% toleranssi paremmalle tunnistukselle
+        const config = TEST_CONFIG[mode as 'cmj' | 'rsi'];
 
         if (logicState.phase === 'GROUND') {
-            if (y < logicState.baseLineY - threshold) {
+            if (y < logicState.baseLineY - config.threshold) {
                 logicState.phase = 'FLIGHT';
                 logicState.t_takeoff = t;
 
-                // Laske kontaktiaika
-                if (logicState.t_landing > 0) {
+                // Laske kontaktiaika (vain RSI:ssä)
+                if (mode === 'rsi' && logicState.t_landing > 0) {
                     const contactMs = (t - logicState.t_landing) * 1000;
-                    if (contactMs > 50 && contactMs < 3000) {
+                    const rsiConfig = TEST_CONFIG.rsi;
+                    if (contactMs > rsiConfig.minContactTime && contactMs < rsiConfig.maxContactTime) {
                         logicState.contactTime = contactMs;
                     }
                 }
@@ -261,25 +282,25 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
                 }
             }
         } else if (logicState.phase === 'FLIGHT') {
-            if (y > logicState.baseLineY - threshold) {
+            if (y > logicState.baseLineY - config.threshold) {
                 logicState.phase = 'GROUND';
                 logicState.t_landing = t;
                 const flightTimeMs = (t - logicState.t_takeoff) * 1000;
 
-                if (flightTimeMs > 100 && flightTimeMs < 1500) {
+                if (flightTimeMs > config.minFlightTime && flightTimeMs < config.maxFlightTime) {
                     logicState.flightTime = flightTimeMs;
                     const t_sec = flightTimeMs / 1000;
-                    logicState.jumpHeight = (CONFIG.g * Math.pow(t_sec, 2) / 8) * 100;
+                    logicState.jumpHeight = (g * Math.pow(t_sec, 2) / 8) * 100;
                     logicState.jumpCount++;
                     logicState.lastLandingTime = t;
 
-                    // Aseta autostop 3s kuluttua
+                    // Aseta autostop
                     if (logicState.autoStopTimeout) {
                         clearTimeout(logicState.autoStopTimeout);
                     }
                     logicState.autoStopTimeout = setTimeout(() => {
                         stopSystem();
-                    }, 3000);
+                    }, config.autoStopDelay);
                 }
             }
         }
@@ -302,28 +323,49 @@ const JumpTest: React.FC<JumpTestProps> = ({ lang = 'fi' }) => {
 
             {!isSystemActive && (
                 <div style={styles.overlay}>
-                    {!isLoading ?
-                        <button onClick={startSystem} style={styles.startBtn}>{t.jumpStart}</button> :
+                    {!isLoading ? (
+                        <div style={styles.menuContainer}>
+                            <div style={styles.menuTitle}>Valitse testi / Select test</div>
+                            <div style={styles.switchContainer}>
+                                <button
+                                    style={mode === 'cmj' ? {...styles.btnToggleLarge, ...styles.btnActive} : styles.btnToggleLarge}
+                                    onClick={() => setMode('cmj')}
+                                >
+                                    {t.jumpCMJ}
+                                </button>
+                                <button
+                                    style={mode === 'rsi' ? {...styles.btnToggleLarge, ...styles.btnActive} : styles.btnToggleLarge}
+                                    onClick={() => setMode('rsi')}
+                                >
+                                    {t.jumpRSI}
+                                </button>
+                            </div>
+                            <button onClick={startSystem} style={styles.startBtn}>{t.jumpStart}</button>
+                        </div>
+                    ) : (
                         <div style={styles.loader}>{t.jumpLoading}</div>
-                    }
+                    )}
                 </div>
             )}
 
             <div style={styles.ui}>
                 <div style={{...styles.hudPanel, width: '200px'}}>
+                    <div style={{...styles.label, marginBottom: '5px'}}>{mode === 'cmj' ? t.jumpCMJ : t.jumpRSI}</div>
+
                     <div style={styles.label}>{t.jumpHeight}</div>
                     <div style={{...styles.bigVal, ...styles.highlight}}>{uiState.height}</div>
+
                     <div style={{...styles.label, marginTop: '5px'}}>{t.jumpFlightTime}</div>
                     <div style={styles.bigVal}>{uiState.flight}</div>
-                    <div style={{...styles.label, marginTop: '5px'}}>{t.jumpContactTime}</div>
-                    <div style={styles.bigVal}>{uiState.contact}</div>
+
+                    {mode === 'rsi' && (
+                        <>
+                            <div style={{...styles.label, marginTop: '5px'}}>{t.jumpContactTime}</div>
+                            <div style={styles.bigVal}>{uiState.contact}</div>
+                        </>
+                    )}
 
                     <div style={{...styles.label, marginTop: '10px', fontSize: '12px'}}>{t.jumpJumps}: {uiState.jumps}</div>
-
-                    <div style={styles.switchContainer}>
-                        <button style={mode === 'cmj' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('cmj')}>{t.jumpCMJ}</button>
-                        <button style={mode === 'rsi' ? {...styles.btnToggle, ...styles.btnActive} : styles.btnToggle} onClick={() => setMode('rsi')}>{t.jumpRSI}</button>
-                    </div>
 
                     {isSystemActive && (
                         <button onClick={stopSystem} style={{...styles.stopBtn, marginTop: '10px'}}>{t.jumpStop}</button>
@@ -354,9 +396,12 @@ const styles = {
     switchContainer: { display: 'flex', gap: '10px', marginTop: '5px' } as React.CSSProperties,
     btnToggle: { background: '#333', color: 'white', border: '1px solid #555', padding: '5px 10px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', pointerEvents: 'auto' } as React.CSSProperties,
     btnActive: { background: '#007AFF', borderColor: '#007AFF' } as React.CSSProperties,
-    startBtn: { pointerEvents: 'auto', padding: '20px 60px', borderRadius: '40px', border: 'none', background: '#00f', color: 'white', fontSize: '20px', fontWeight: 'bold', boxShadow: '0 0 30px rgba(0,0,255,0.5)', zIndex: 20, cursor: 'pointer' } as React.CSSProperties,
+    startBtn: { pointerEvents: 'auto', padding: '15px 50px', borderRadius: '30px', border: 'none', background: '#00f', color: 'white', fontSize: '18px', fontWeight: 'bold', boxShadow: '0 0 30px rgba(0,0,255,0.5)', zIndex: 20, cursor: 'pointer', marginTop: '20px' } as React.CSSProperties,
     stopBtn: { pointerEvents: 'auto', width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #f00', background: 'rgba(255,0,0,0.2)', color: '#f00', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' } as React.CSSProperties,
-    loader: { fontSize: '14px', color: '#aaa' } as React.CSSProperties
+    loader: { fontSize: '14px', color: '#aaa' } as React.CSSProperties,
+    menuContainer: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', background: 'rgba(0,0,0,0.8)', padding: '40px', borderRadius: '12px', backdropFilter: 'blur(10px)' } as React.CSSProperties,
+    menuTitle: { fontSize: '18px', fontWeight: 'bold', color: '#fff', textAlign: 'center' } as React.CSSProperties,
+    btnToggleLarge: { background: '#333', color: 'white', border: '2px solid #555', padding: '15px 30px', borderRadius: '8px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer', pointerEvents: 'auto', minWidth: '100px' } as React.CSSProperties
 };
 
 
